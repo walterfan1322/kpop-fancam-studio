@@ -1,0 +1,62 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+.env.local
+*.credentials.json
+
+# Model weights (too large for git — see README for download links)
+models/
+*.onnx
+*.pt
+*.pth
+*.safetensors
+yolov8n.pt
+yolov8*.pt
+
+# Data (audio / video / caches / logs)
+data/
+output/
+clips/
+videos/
+face_library/
+browser_data/
+*.log
+*.mp4
+*.mp3
+*.m4a
+*.wav
+*.webm
+*.shots.json
+*.pose.json
+*.pose.npz
+
+# Backend job/cache store
+.jobs/
+.cache/
+
+# Frontend build artifacts
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+frontend/src/*.js
+!frontend/src/vite-env.d.ts
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+*.bak
+*.bak_*
+*.swp
+*.swo

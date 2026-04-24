@@ -1,0 +1,449 @@
+groups:
+  IVE:
+    artist_name: IVE
+    mb_artist_id: b2f2216a-d7a9-4ce0-8b8f-f494d9a8c196
+    tracks:
+    - title: BLACKHOLE
+      music_url: https://www.tiktok.com/music/BLACKHOLE-7603042795515709456
+    - title: BANG BANG
+      music_url: https://www.tiktok.com/music/BANG-BANG-7600624977247307777
+    - title: Thank U
+      music_url: https://www.tiktok.com/music/Thank-U-7463114431545640961
+    - title: Lips
+      music_url: https://www.tiktok.com/music/Lips-7218471554655455234
+    - title: OTT
+    - title: LOVE DIVE
+      music_url: https://www.tiktok.com/music/LOVE-DIVE-7080780585349711873
+      album: LOVE DIVE
+    - title: ELEVEN
+      album: ELEVEN
+    - title: Blue Blood
+      music_url: https://www.tiktok.com/music/Blue-Blood-7218471554068252673
+    - title: After LIKE
+      music_url: https://www.tiktok.com/music/After-LIKE-7131043904060819457
+      album: After LIKE
+    - title: Payback
+    - title: REBEL HEART
+      music_url: https://www.tiktok.com/music/REBEL-HEART-7450795623324944401
+      album: IVE EMPATHY
+    - title: My Satisfaction
+      music_url: https://www.tiktok.com/music/My-Satisfaction-7131043904281217025
+    - title: Dear, My Feelings
+    - title: I AM
+      music_url: https://www.tiktok.com/music/I-AM-7218471554349271041
+      album: I've IVE
+    - title: TKO
+    - title: Ice Queen
+      music_url: https://www.tiktok.com/music/Ice-Queen-7358353855099258896
+    - title: All Night
+    - title: Be Alright
+      music_url: https://www.tiktok.com/music/Be-Alright-7522778231089022977
+    - title: ROYAL
+      music_url: https://www.tiktok.com/music/ROYAL-7080780585572026369
+    - title: GOTCHA (Baddest Eros)
+    - title: FLU
+    - title: Baddie
+      album: I'VE MINE
+    - title: Either Way
+    - title: Fireworks
+    - title: Heroine
+    - title: Shine With Me
+      music_url: https://www.tiktok.com/music/Shine-With-Me-7218471553837565953
+    - title: Cherish
+      music_url: https://www.tiktok.com/music/Cherish-7218471556349954049
+    - title: HOT COFFEE
+    - title: You Wanna Cry
+    - title: Off the Record
+      music_url: https://www.tiktok.com/music/Off-The-Record-7286067087650736130
+      album: I'VE MINE
+    - title: NOT YOUR GIRL
+      music_url: https://www.tiktok.com/music/NOT-YOUR-GIRL-7218471555896969217
+    - title: Holy Moly
+    - title: Kitsch
+      album: I've IVE
+    - title: Classic
+    - title: Queen of Hearts
+    - title: DARE ME
+      music_url: https://www.tiktok.com/music/DARE-ME-7490835181278611472
+    - title: I WANT
+      music_url: https://www.tiktok.com/music/I-WANT-7254158625060063233
+    - title: ATTITUDE
+      music_url: https://www.tiktok.com/music/ATTITUDE-7463114431545657345
+      album: IVE EMPATHY
+    - title: Fashion
+    - title: Mine
+      music_url: https://www.tiktok.com/music/Mine-7218471554894710786
+    - title: After LIKE (Short)
+      music_url: https://www.tiktok.com/music/After-LIKE-Short-Ver-7133286660972513281
+    - title: In Your Heart (REI Solo)
+      music_url: https://www.tiktok.com/music/In-Your-Heart-REI-Solo-7603042795515545616
+    - title: HEYA
+      music_url: https://www.tiktok.com/music/%ED%95%B4%EC%95%BC-HEYA-7358353855099209744
+      album: IVE SWITCH
+    - title: WOW
+      music_url: https://www.tiktok.com/music/WOW-7358353855099275280
+    - title: XOXZ
+      music_url: https://www.tiktok.com/music/XOXZ-7540596493637732368
+    - title: Accendio
+      music_url: https://www.tiktok.com/music/Accendio-7358353855099226128
+      album: IVE SWITCH
+    - title: Supernova Love
+      music_url: https://www.tiktok.com/music/Supernova-Love-7432305167100495888
+      album: IVE EMPATHY
+    - title: Blue Heart
+      music_url: https://www.tiktok.com/music/Blue-Heart-7358353855099242512
+    members:
+    - latin: Yujin
+      hangul: 안유진
+      chinese: 安俞真
+    - latin: Gaeul
+      hangul: 가을
+      chinese: 秋天
+    - latin: Rei
+      hangul: 레이
+      chinese: 直井怜
+    - latin: Wonyoung
+      hangul: 장원영
+      chinese: 張員瑛
+    - latin: Liz
+      hangul: 리즈
+      chinese: 金昭希
+    - latin: Leeseo
+      hangul: 이서
+      chinese: 李瑞
+  fromis_9:
+    artist_name: fromis_9
+    members:
+    - latin: Hayoung
+      hangul: 송하영
+      chinese: 宋河英
+    - latin: Jiwon
+      hangul: 박지원
+      chinese: 朴志元
+    - latin: Chaeyoung
+      hangul: 이채영
+      chinese: 李彩英
+    - latin: Nagyung
+      hangul: 이나경
+      chinese: 李娜炅
+    - latin: Jiheon
+      hangul: 백지헌
+      chinese: 白智憲
+    tracks:
+    - title: To Heart
+      album: To. Heart
+    - title: DKDK
+      album: To. Day
+    - title: Love Bomb
+      album: From.9
+    - title: Fun!
+      album: Fun Factory
+    - title: Feel Good (SECRET CODE)
+      album: My Little Society
+    - title: WE GO
+      album: 9 WAY TICKET
+    - title: Talk & Talk
+      album: Talk & Talk
+    - title: DM
+      album: Midnight Guest
+    - title: Stay This Way
+      album: from our Memento Box
+    - title: '#menow'
+      album: Unlock My World
+    - title: Supersonic
+      album: Supersonic
+  BABYMONSTER:
+    artist_name: BABYMONSTER
+    members:
+    - latin: Ruka
+      hangul: 루카
+      chinese: 河井瑠花
+    - latin: Pharita
+      hangul: 파리타
+      chinese: 帕麗塔
+    - latin: Asa
+      hangul: 아사
+      chinese: 榎並杏紗
+    - latin: Ahyeon
+      hangul: 아현
+      chinese: 鄭雅譞
+    - latin: Haram
+      hangul: 하람
+      chinese: 申廈藍
+    - latin: Rora
+      hangul: 로라
+      chinese: 李茶仁
+    - latin: Chiquita
+      hangul: 치키타
+      chinese: 奇琪塔
+    tracks:
+    - title: BATTER UP
+      album: BABYMONS7ER
+    - title: SHEESH
+      album: BABYMONS7ER
+    - title: Stuck In The Middle
+      album: BABYMONS7ER
+    - title: FOREVER
+      album: DRIP
+    - title: DRIP
+      album: DRIP
+    - title: CLIK CLAK
+      album: DRIP
+    - title: LIKE THAT
+      album: WE GO UP
+    - title: WE GO UP
+      album: WE GO UP
+  IU:
+    artist_name: IU
+    members:
+    - latin: IU
+      hangul: 아이유
+      chinese: 李知恩
+    tracks:
+    - title: Good Day
+      album: Real
+    - title: You and I
+      album: Last Fantasy
+    - title: Red Shoes
+      album: Modern Times
+    - title: Twenty-three
+      album: CHAT-SHIRE
+    - title: Palette
+      album: Palette
+    - title: BBIBBI
+      album: BBIBBI
+    - title: Blueming
+      album: Love Poem
+    - title: eight
+      album: eight
+    - title: Celebrity
+      album: LILAC
+    - title: LILAC
+      album: LILAC
+    - title: Strawberry Moon
+      album: Strawberry Moon
+    - title: Love wins all
+      album: The Winning
+    - title: Holssi
+      album: The Winning
+    - title: Shh..
+      album: The Winning
+  QWER:
+    artist_name: QWER
+    members:
+    - latin: Chodan
+      hangul: 쵸단
+      chinese: 洪智惠
+    - latin: Magenta
+      hangul: 마젠타
+      chinese: 李婭熙
+    - latin: Hina
+      hangul: 히나
+      chinese: 張娜英
+    - latin: Siyeon
+      hangul: 시연
+      chinese: 李始燕
+    tracks:
+    - title: Discord
+      album: Harmony from Discord
+    - title: T.B.H
+      album: Manito
+    - title: My Name Is Malguem
+      album: Algorithm's Blossom
+    - title: Fake Idol
+      album: Algorithm's Blossom
+    - title: Dear
+      album: Dear
+    - title: Internet Lovers
+      album: Tick, Ticking Boom
+  ILLIT:
+    artist_name: ILLIT
+    members:
+    - latin: Yunah
+      hangul: 윤아
+      chinese: 尹雅
+    - latin: Minju
+      hangul: 민주
+      chinese: 李敏珠
+    - latin: Moka
+      hangul: 모카
+      chinese: 坂井萌華
+    - latin: Wonhee
+      hangul: 원희
+      chinese: 朴元熙
+    - latin: Iroha
+      hangul: 이로하
+      chinese: 外園彩羽
+    tracks:
+    - title: Magnetic
+      album: SUPER REAL ME
+    - title: My World
+      album: SUPER REAL ME
+    - title: Lucky Girl Syndrome
+      album: I'LL LIKE YOU
+    - title: Cherish (My Love)
+      album: I'LL LIKE YOU
+    - title: Almond Chocolate
+      album: I'LL LIKE YOU
+    - title: Tick-Tack
+      album: Bomb
+    - title: Do the Dance
+      album: Bomb
+  Hearts2Hearts:
+    artist_name: Hearts2Hearts
+    members:
+    - latin: Carmen
+      hangul: 카르멘
+      chinese: 卡門
+    - latin: Jiwoo
+      hangul: 지우
+      chinese: 智友
+    - latin: Yuha
+      hangul: 유하
+      chinese: 俞荷
+    - latin: Stella
+      hangul: 스텔라
+      chinese: 思黛拉
+    - latin: Juun
+      hangul: 주운
+      chinese: 周雲
+    - latin: Ana
+      hangul: 아나
+      chinese: 雅娜
+    - latin: Ian
+      hangul: 이안
+      chinese: 李安
+    - latin: Yeon
+      hangul: 예온
+      chinese: 藝溫
+    tracks:
+    - title: The Chase
+      album: The Chase
+    - title: Style
+      album: Style
+    - title: Pretty Please
+      album: Focus
+    - title: Focus
+      album: Focus
+  aespa:
+    artist_name: aespa
+    members:
+    - latin: Karina
+      hangul: 카리나
+      chinese: 劉知珉
+    - latin: Giselle
+      hangul: 지젤
+      chinese: 内永枝利
+    - latin: Winter
+      hangul: 윈터
+      chinese: 金旼炡
+    - latin: Ningning
+      hangul: 닝닝
+      chinese: 寧藝卓
+    tracks:
+    - title: Black Mamba
+      album: Black Mamba
+    - title: Next Level
+      album: Savage
+    - title: Savage
+      album: Savage
+    - title: Girls
+      album: Girls
+    - title: Spicy
+      album: MY WORLD
+    - title: Welcome to MY World
+      album: MY WORLD
+    - title: Drama
+      album: Drama
+    - title: Armageddon
+      album: Armageddon
+    - title: Supernova
+      album: Armageddon
+    - title: Whiplash
+      album: Whiplash
+    - title: Dirty Work
+      album: Rich Man
+    - title: Rich Man
+      album: Rich Man
+  ITZY:
+    artist_name: ITZY
+    members:
+    - latin: Yeji
+      hangul: 예지
+      chinese: 黃禮志
+    - latin: Lia
+      hangul: 리아
+      chinese: 崔智秀
+    - latin: Ryujin
+      hangul: 류진
+      chinese: 申留真
+    - latin: Chaeryeong
+      hangul: 채령
+      chinese: 李彩領
+    - latin: Yuna
+      hangul: 유나
+      chinese: 申有娜
+    tracks:
+    - title: DALLA DALLA
+      album: IT'z Different
+    - title: ICY
+      album: IT'z ICY
+    - title: WANNABE
+      album: IT'z ME
+    - title: Not Shy
+      album: Not Shy
+    - title: In the morning
+      album: GUESS WHO
+    - title: LOCO
+      album: CRAZY IN LOVE
+    - title: SNEAKERS
+      album: CHECKMATE
+    - title: Cake
+      album: KILL MY DOUBT
+    - title: UNTOUCHABLE
+      album: BORN TO BE
+    - title: Born to Be
+      album: BORN TO BE
+    - title: Mr. Vampire
+      album: GOLD
+    - title: Imaginary Friend
+      album: GIRLS WILL BE GIRLS
+  LE SSERAFIM:
+    artist_name: LE SSERAFIM
+    members:
+    - latin: Sakura
+      hangul: 사쿠라
+      chinese: 宮脇咲良
+    - latin: Chaewon
+      hangul: 채원
+      chinese: 金采源
+    - latin: Yunjin
+      hangul: 윤진
+      chinese: 許允真
+    - latin: Kazuha
+      hangul: 카즈하
+      chinese: 中村一葉
+    - latin: Eunchae
+      hangul: 은채
+      chinese: 洪恩採
+    tracks:
+    - title: FEARLESS
+      album: FEARLESS
+    - title: ANTIFRAGILE
+      album: ANTIFRAGILE
+    - title: UNFORGIVEN
+      album: UNFORGIVEN
+    - title: Eve, Psyche & The Bluebeard's wife
+      album: UNFORGIVEN
+    - title: Perfect Night
+      album: EASY
+    - title: EASY
+      album: EASY
+    - title: Smart
+      album: EASY
+    - title: CRAZY
+      album: CRAZY
+    - title: 1-800-hot-n-fun
+      album: HOT
+    - title: HOT
+      album: HOT
