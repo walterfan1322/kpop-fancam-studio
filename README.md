@@ -68,7 +68,8 @@ Status as of last session:
 | M4a   | Keypoint-based yaw estimation → bucket frontal/left/right            | ✅ |
 | M4b   | `plan_merge` honors bucket — prefers same-bucket transitions         | ✅ |
 | M5    | Yaw-mismatch ±3-frame cut refinement (pose-refine pass)              | ✅ |
-| M6    | RIFE frame interpolation for stubborn near-miss cuts                 | ⏸ optional |
+| M6    | M6-candidate observability — flag stubborn cuts in the merge log     | ✅ |
+| M6+   | RIFE frame interpolation for flagged cuts                            | ⏸ deferred |
 | M7    | Expose merge_style / use_pose flags in API + UI                      | ✅ |
 
 Main pipeline (M0–M4 + M7) is functionally complete. M4b's cross-bucket
@@ -78,9 +79,16 @@ synthetic regression in `tests/test_yaw_bucket.py` instead — five
 hand-crafted scenarios verify the bucket-match bonus arithmetic, with
 an A/B counter-test to prove the bonus actually changes picks.
 
-Remaining (optional polish):
+Remaining (deferred):
 
-- **M6**: RIFE interpolation for the rare jarring cut.
+- **M6+ (RIFE interpolator)**: M5 + M6-candidate observability ship the
+  detection layer — when a cut can't be cleanly snapped, the merge log
+  emits an `M6-candidate` line naming the cut, the boundary time, the
+  source pair, and the reason (low yaw-conf in window, or yaw² over the
+  acceptance cap). Building the actual RIFE interpolator on top of that
+  is deferred until visual inspection of the rendered MP4s confirms the
+  flagged cuts are perceptibly jarring. RIFE without a verified problem
+  is over-engineering; the observability tells us whether it's worth it.
 
 ## Tech stack
 
@@ -229,6 +237,16 @@ Output: `clips/<group>/<song>/merged_*.mp4` (1080×1920, 30 fps, h264+aac).
    above the `max_acceptable_score` cap (yaw² > 0.25 ≈ yaw delta > 0.5
    means the cap kicks in and the cut stays at its beat-snapped position
    rather than landing on a wildly mismatched frame).
+
+8. **M6-candidate flags**: cuts that the pose-refine pass refused to
+   touch (low yaw-conf in the entire ±3-frame window, or best candidate
+   above the score cap) are logged as `[merge] M6-candidate: cut K
+   t=…s (vidA→vidB) …`. These are the cuts most likely to look jarring
+   on screen and the natural inputs for a future RIFE interpolation
+   pass. On the REBEL HEART reference run, 4 of 5 cuts get flagged
+   because the pool sits almost entirely in the `frontal` bucket with
+   noisy yaw confidence — exactly the case where pose-refine has
+   nothing to grip on.
 
 ## Observed numbers (REBEL HEART session)
 

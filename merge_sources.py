@@ -256,6 +256,7 @@ def _refine_cuts_by_pose(chunks: list["MergeChunk"],
                           max_delta_frames: int = 3,
                           yaw_conf_thresh: float = 0.30,
                           min_improve: float = 1e-4,
+                          max_acceptable_score: float = 0.25,
                           log_fn=print) -> list["MergeChunk"]:
     """M5: nudge each internal cut by at most ±max_delta_frames frames
     to minimize the yaw mismatch between the outgoing source's last
@@ -324,8 +325,22 @@ def _refine_cuts_by_pose(chunks: list["MergeChunk"],
 
         if best_score is None:
             n_skipped_no_conf += 1
+            log_fn(f"[merge] M6-candidate: cut {k} t={t:.3f}s "
+                   f"({src_a.meta.video_id}→{src_b.meta.video_id}) "
+                   f"low yaw_conf in ±{max_delta_frames}f window "
+                   f"— hard cut may be jarring")
             continue
         if best_delta == 0:
+            continue
+        # Hard cap on acceptable yaw mismatch — when baseline was n/a
+        # (low conf at the original boundary), we still don't want to
+        # snap to a wildly-different yaw just because it was the only
+        # confident sample in the window.
+        if best_score > max_acceptable_score:
+            log_fn(f"[merge] M6-candidate: cut {k} t={t:.3f}s "
+                   f"({src_a.meta.video_id}→{src_b.meta.video_id}) "
+                   f"yaw²={best_score:.3f} > cap {max_acceptable_score:.2f} "
+                   f"— hard cut may be jarring")
             continue
         if (baseline_score is not None
                 and best_score >= baseline_score - min_improve):
@@ -354,7 +369,8 @@ def _refine_cuts_by_pose(chunks: list["MergeChunk"],
            f"(max_delta=±{max_delta_frames}f, "
            f"skip_no_head={n_skipped_no_head}, "
            f"skip_no_conf={n_skipped_no_conf}, "
-           f"skip_min_chunk={n_skipped_min_chunk})")
+           f"skip_min_chunk={n_skipped_min_chunk}, "
+           f"max_score_cap={max_acceptable_score:.2f})")
     return out
 
 
