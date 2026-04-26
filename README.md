@@ -67,7 +67,7 @@ Status as of last session:
 | M3c   | Validation: run M1+M3 together, compare to reference                 | ✅ |
 | M4a   | Keypoint-based yaw estimation → bucket frontal/left/right            | ✅ |
 | M4b   | `plan_merge` honors bucket — prefers same-bucket transitions         | ✅ |
-| M5    | Pr-VIPE / Procrustes keypoint L2 + ±3-frame cut refinement           | ⏸ optional |
+| M5    | Yaw-mismatch ±3-frame cut refinement (pose-refine pass)              | ✅ |
 | M6    | RIFE frame interpolation for stubborn near-miss cuts                 | ⏸ optional |
 | M7    | Expose merge_style / use_pose flags in API + UI                      | ✅ |
 
@@ -80,8 +80,6 @@ an A/B counter-test to prove the bonus actually changes picks.
 
 Remaining (optional polish):
 
-- **M5**: use RTMPose data to snap cut points by ±3 frames to minimize
-  pose mismatch. Conditional on M4b hard-cut output quality.
 - **M6**: RIFE interpolation for the rare jarring cut.
 
 ## Tech stack
@@ -222,6 +220,15 @@ Output: `clips/<group>/<song>/merged_*.mp4` (1080×1920, 30 fps, h264+aac).
 6. **Cut points**: beats from Beat This! define chunk boundaries. Each chunk
    gets assigned the highest-quality source that has target coverage there.
    Hard-cut = `ffmpeg concat demuxer`, xfade = `filter_complex`.
+
+7. **Pose-refine snap**: for each cut, the planner evaluates ±3 frames
+   around the beat-snapped boundary and picks the offset that minimizes
+   `(yaw_outgoing - yaw_incoming)²`. Skipped when either side has low yaw
+   confidence at every candidate frame, when the snap would shrink a
+   neighbour below `min_chunk_sec`, or when the best candidate is still
+   above the `max_acceptable_score` cap (yaw² > 0.25 ≈ yaw delta > 0.5
+   means the cap kicks in and the cut stays at its beat-snapped position
+   rather than landing on a wildly mismatched frame).
 
 ## Observed numbers (REBEL HEART session)
 

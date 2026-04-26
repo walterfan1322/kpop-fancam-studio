@@ -249,6 +249,115 @@ def color_match_params(src_mean: np.ndarray, src_std: np.ndarray,
 
 # ---------- planning ----------
 
+def _refine_cuts_by_pose(chunks: list["MergeChunk"],
+                          sources: Sequence["MergeSource"],
+                          clip_dur: float,
+                          min_chunk_sec: float = 1.5,
+                          max_delta_frames: int = 3,
+                          yaw_conf_thresh: float = 0.30,
+                          min_improve: float = 1e-4,
+                          log_fn=print) -> list["MergeChunk"]:
+    """M5: nudge each internal cut by at most ±max_delta_frames frames
+    to minimize the yaw mismatch between the outgoing source's last
+    frame and the incoming source's first frame.
+
+    Reads each source's `head` HeadTrack (yaw_proxy + yaw_conf, populated
+    by pose_track.track_head_keypoints when --pose is set). Skips a cut
+    if either side lacks high-confidence yaw at the boundary frame, or
+    if the snap would shrink either neighbour below min_chunk_sec.
+
+    `min_improve` — the snapped score must beat the in-place score by at
+    least this delta (yaw² units) to actually move. Prevents pointless
+    sub-frame jitter.
+
+    Returns a new chunks list (may share refs with input where unchanged).
+    """
+    if max_delta_frames <= 0 or len(chunks) < 2:
+        return chunks
+
+    n_refined = 0
+    n_skipped_no_head = 0
+    n_skipped_no_conf = 0
+    n_skipped_min_chunk = 0
+    out = list(chunks)
+    for k in range(len(out) - 1):
+        a = out[k]
+        b = out[k + 1]
+        src_a = sources[a.src_idx]
+        src_b = sources[b.src_idx]
+        head_a = getattr(src_a, "head", None)
+        head_b = getattr(src_b, "head", None)
+        if head_a is None or head_b is None:
+            n_skipped_no_head += 1
+            continue
+        fps_a = float(getattr(src_a.tracked.meta, "fps", 30.0)) or 30.0
+        fps_b = float(getattr(src_b.tracked.meta, "fps", 30.0)) or 30.0
+        t = a.song_end  # = b.song_start
+
+        # Compute baseline (delta=0) score for the gating decision.
+        ia0 = int(round(t * fps_a))
+        ib0 = int(round(t * fps_b))
+        baseline_score: float | None = None
+        if (0 <= ia0 < head_a.n_frames and 0 <= ib0 < head_b.n_frames
+                and head_a.yaw_conf[ia0] >= yaw_conf_thresh
+                and head_b.yaw_conf[ib0] >= yaw_conf_thresh):
+            baseline_score = float(
+                (head_a.yaw_proxy[ia0] - head_b.yaw_proxy[ib0]) ** 2)
+
+        best_delta = 0
+        best_score = baseline_score
+        for delta in range(-max_delta_frames, max_delta_frames + 1):
+            if delta == 0:
+                continue
+            ia = ia0 + delta
+            ib = ib0 + delta
+            if not (0 <= ia < head_a.n_frames and 0 <= ib < head_b.n_frames):
+                continue
+            if (head_a.yaw_conf[ia] < yaw_conf_thresh
+                    or head_b.yaw_conf[ib] < yaw_conf_thresh):
+                continue
+            score = float(
+                (head_a.yaw_proxy[ia] - head_b.yaw_proxy[ib]) ** 2)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_delta = delta
+
+        if best_score is None:
+            n_skipped_no_conf += 1
+            continue
+        if best_delta == 0:
+            continue
+        if (baseline_score is not None
+                and best_score >= baseline_score - min_improve):
+            continue
+
+        # Use the average fps to convert delta back to seconds — fps_a
+        # and fps_b are typically identical (both 30).
+        avg_fps = (fps_a + fps_b) / 2.0
+        new_t = t + best_delta / avg_fps
+        new_a_dur = new_t - a.song_start
+        new_b_dur = b.song_end - new_t
+        if (new_a_dur < min_chunk_sec or new_b_dur < min_chunk_sec
+                or new_t <= 0.0 or new_t >= clip_dur):
+            n_skipped_min_chunk += 1
+            continue
+
+        out[k] = MergeChunk(a.song_start, new_t, a.src_idx)
+        out[k + 1] = MergeChunk(new_t, b.song_end, b.src_idx)
+        base_str = (f"{baseline_score:.4f}"
+                    if baseline_score is not None else "n/a")
+        log_fn(f"[merge] pose-refine: cut {k}: t={t:.3f}s → {new_t:.3f}s "
+               f"(Δ={best_delta:+d}f, yaw² {base_str}→{best_score:.4f})")
+        n_refined += 1
+
+    log_fn(f"[merge] pose-refine: adjusted {n_refined}/{len(out) - 1} cuts "
+           f"(max_delta=±{max_delta_frames}f, "
+           f"skip_no_head={n_skipped_no_head}, "
+           f"skip_no_conf={n_skipped_no_conf}, "
+           f"skip_min_chunk={n_skipped_min_chunk})")
+    return out
+
+
 def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                step_sec: float = 1.0,
                min_chunk_sec: float = 1.5,
@@ -258,6 +367,8 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                beats: np.ndarray | None = None,
                beat_lead_sec: float = 0.05,
                yaw_buckets: "list[tuple[str, float | None]] | None" = None,
+               pose_refine: bool = False,
+               pose_refine_max_delta_frames: int = 3,
                log_fn=print) -> list[MergeChunk]:
     """Decide, per song-second bucket, which source to use. Returns the
     resulting list of merge chunks covering [0, clip_dur] contiguously.
@@ -588,6 +699,20 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                     n_snapped += 1
         log_fn(f"[merge] beat-snap: adjusted {n_snapped}/"
                f"{len(chunks) - 1} boundaries (lead={beat_lead_sec:.2f}s)")
+
+    # M5: pose-refined cut snapping. Nudge each internal cut by at most
+    # ±pose_refine_max_delta_frames frames to minimize the yaw mismatch
+    # between the outgoing source's last frame and the incoming source's
+    # first frame. Only fires when caller passes pose_refine=True AND each
+    # source's `head` HeadTrack is populated (oneshot_fancam pre-computes
+    # these when --pose is set, so the data is reused for free).
+    if pose_refine and len(chunks) > 1 and pose_refine_max_delta_frames > 0:
+        chunks = _refine_cuts_by_pose(
+            chunks, sources, clip_dur,
+            min_chunk_sec=min_chunk_sec,
+            max_delta_frames=pose_refine_max_delta_frames,
+            log_fn=log_fn,
+        )
 
     for c in chunks:
         s = sources[c.src_idx]

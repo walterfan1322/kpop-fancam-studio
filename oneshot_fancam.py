@@ -708,11 +708,15 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                 pre_head_tracks.append(ht)
             yaw_buckets = pose_track.session_yaw_bucket(pre_head_tracks)
 
-    # Plan + render.
+    # Plan + render. Pose-refine reuses the head_tracks already
+    # attached to each source above (s.head), so it costs only a few
+    # ms per cut to evaluate the ±3 frame yaw window.
     chunks = merge_sources.plan_merge(merge_sources_list, clip_dur,
                                        step_sec=1.0, min_chunk_sec=1.5,
                                        beats=beats, beat_lead_sec=0.05,
                                        yaw_buckets=yaw_buckets,
+                                       pose_refine=bool(args.pose),
+                                       pose_refine_max_delta_frames=3,
                                        log_fn=log)
     # Output path: hash of sorted video ids for stable naming.
     sorted_ids = sorted(s.meta.video_id for s in merge_sources_list)
