@@ -307,12 +307,6 @@ export function QuickMode() {
       {err && <div className="quick-error">{err}</div>}
 
       <div className="quick-body">
-      <div style={{ gridColumn: '1 / -1' }}>
-        <JobsHistory />
-      </div>
-      <div style={{ gridColumn: '1 / -1' }}>
-        <RecentClips refreshToken={clipsRefresh} />
-      </div>
       <div className="card quick-form-card">
         <div className="quick-form">
           <label>{t('quickGroup')}</label>
@@ -489,6 +483,13 @@ export function QuickMode() {
           </div>
         </div>
       )}
+      </div>
+
+      <div style={{ gridColumn: '1 / -1' }}>
+        <JobsHistory />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <RecentClips refreshToken={clipsRefresh} />
       </div>
       </div>
     </div>
