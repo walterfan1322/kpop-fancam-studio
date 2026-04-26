@@ -61,7 +61,7 @@ Status as of last session:
 | M1c   | Swap `librosa.beat_track` → Beat This! for K-pop tempo/downbeat      | ✅ |
 | M1d   | Validate M1 end-to-end on REBEL HEART reference set                  | ✅ |
 | M2a   | Integrate TransNetV2 shot-gate to reject multi-cam broadcasts        | ✅ |
-| M2b   | Re-download a pool with gate active; confirm only jikcams pass       | 🟡 in progress |
+| M2b   | Re-download a pool with gate active; confirm only jikcams pass       | ✅ |
 | M3a   | RTMPose-m ONNX runner + per-source head keypoint track               | ✅ |
 | M3b   | Re-crop so head lands at fixed y-fraction regardless of source       | ✅ |
 | M3c   | Validation: run M1+M3 together, compare to reference                 | ✅ |
@@ -71,11 +71,15 @@ Status as of last session:
 | M6    | RIFE frame interpolation for stubborn near-miss cuts                 | ⏸ optional |
 | M7    | Expose merge_style / use_pose flags in API + UI                      | ✅ |
 
-Main pipeline (M0–M4 + M7) is functionally complete. Remaining:
+Main pipeline (M0–M4 + M7) is functionally complete. M4b's cross-bucket
+preference can't be exercised end-to-end on REBEL HEART (the entire
+downloadable pool falls in `frontal`/`unknown`), so it's covered by a
+synthetic regression in `tests/test_yaw_bucket.py` instead — five
+hand-crafted scenarios verify the bucket-match bonus arithmetic, with
+an A/B counter-test to prove the bonus actually changes picks.
 
-- **M2b**: gate correctness is verified on REBEL HEART; still want a song with
-  angle-diverse sources (stage-left + stage-right fancams) to regression-test
-  M4b's cross-bucket preference.
+Remaining (optional polish):
+
 - **M5**: use RTMPose data to snap cut points by ±3 frames to minimize
   pose mismatch. Conditional on M4b hard-cut output quality.
 - **M6**: RIFE interpolation for the rare jarring cut.
