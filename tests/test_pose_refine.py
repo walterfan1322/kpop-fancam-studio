@@ -204,6 +204,37 @@ def test_min_chunk_guard():
     print("  ✓ min_chunk_sec guard rejects unsafe snaps")
 
 
+def test_score_cap_rejects_wild_snap():
+    """When baseline is n/a (low conf at boundary frame) and the only
+    confident candidates have huge yaw mismatch, do NOT snap. Without
+    this cap, the helper would happily move a cut to a frame with
+    near-maximal yaw mismatch (yaw² ≈ 2) just because nothing else
+    was measurable."""
+    n = 1800
+    fps = 30.0
+    yaw_a = np.full(n, 0.20, dtype=np.float32)
+    yaw_b = np.full(n, -0.95, dtype=np.float32)  # near-max mismatch (1.15² ≈ 1.32)
+    # Boundary at frame 150 — kill conf there to force baseline=n/a.
+    conf_a = np.ones(n, dtype=np.float32)
+    conf_b = np.ones(n, dtype=np.float32)
+    conf_a[150] = 0.0
+    conf_b[150] = 0.0
+    a = make_source("AAA", yaw_a, conf=conf_a)
+    b = make_source("BBB", yaw_b, conf=conf_b)
+    chunks = [MergeChunk(0.0, 5.0, 0), MergeChunk(5.0, 10.0, 1)]
+    logs, log_fn = collect_logs()
+    out = _refine_cuts_by_pose(chunks, [a, b], clip_dur=10.0,
+                                min_chunk_sec=1.0,
+                                max_delta_frames=3,
+                                max_acceptable_score=0.25,
+                                log_fn=log_fn)
+    assert out[0].song_end == 5.0, \
+        f"score cap should block wild snap; got {out[0].song_end}"
+    assert any("adjusted 0/" in m for m in logs), \
+        f"expected zero refinements, got {logs}"
+    print("  ✓ score cap rejects snap to wildly-mismatched yaw")
+
+
 def main():
     print("=== M5 synthetic _refine_cuts_by_pose regression ===\n")
     print("[T1] no-op when yaw already aligned at boundary")
@@ -218,7 +249,9 @@ def main():
     test_skip_when_low_conf()
     print("\n[T6] respects min_chunk_sec guard")
     test_min_chunk_guard()
-    print("\n=== all 6 tests passed ===")
+    print("\n[T7] score cap rejects snap to wildly-mismatched yaw")
+    test_score_cap_rejects_wild_snap()
+    print("\n=== all 7 tests passed ===")
 
 
 if __name__ == "__main__":
