@@ -97,17 +97,15 @@ export function RecentClips({ refreshToken }: { refreshToken: number }) {
             <div className="recent-clips-grid">
               {rows.map(c => {
                 const url = api.clipUrl(c.group, c.song, c.title)
-                // `#t=0.1` nudges the poster frame off the absolute first
-                // frame — xfade-merged clips occasionally start with a
-                // near-black transition frame that reads as an empty card.
-                // `preload="auto"` (not "metadata") is required to actually
-                // render that frame: metadata-only fetches just the moov
-                // atom with no decoded pixels, leaving the card black and
-                // making the first click-to-play feel sluggish while the
-                // browser does a fresh Range fetch. "auto" trades a few MB
-                // of upfront bandwidth per card for an instant thumbnail
-                // and instant playback. With MAX_ITEMS=6 this is fine.
-                const posterUrl = `${url}#t=0.1`
+                // Earlier versions used `${url}#t=0.1` + preload="auto" to
+                // show a non-black thumbnail without a click. That combo
+                // raced badly: Chrome would fetch the moov, then queue the
+                // seek-to-0.1 byte-range fetch behind the other cards'
+                // preloads. The element sat on a black canvas and the
+                // first ▶ click was no-op because the pending seek blocked
+                // play(). preload="metadata" is strictly more reliable —
+                // browser fetches just the moov, surfaces real controls,
+                // and starts streaming the moment the user clicks ▶.
                 const dlUrl = api.clipDownloadUrl(c.group, c.song, c.title)
                 const rel = relTime(c.mtime ?? 0, now)
                 const fname = `${c.group} ${c.song} (${c.title}).mp4`
@@ -145,7 +143,7 @@ export function RecentClips({ refreshToken }: { refreshToken: number }) {
                             aria-label={t('recentClipsDismiss')}>
                       ×
                     </button>
-                    <video controls preload="auto" src={posterUrl} />
+                    <video controls preload="metadata" src={url} />
                     <div className="recent-clip-meta">
                       <div className="recent-clip-top">
                         <span className="recent-clip-group">{c.group}</span>
