@@ -69,7 +69,7 @@ Status as of last session:
 | M4b   | `plan_merge` honors bucket — prefers same-bucket transitions         | ✅ |
 | M5    | Yaw-mismatch ±3-frame cut refinement (pose-refine pass)              | ✅ |
 | M6    | M6-candidate observability — flag stubborn cuts in the merge log     | ✅ |
-| M6+   | RIFE frame interpolation for flagged cuts                            | ⏸ deferred |
+| M6+   | RIFE frame interpolation for flagged cuts                            | ❌ rejected (visual eval) |
 | M7    | Expose merge_style / use_pose flags in API + UI                      | ✅ |
 
 Main pipeline (M0–M4 + M7) is functionally complete. M4b's cross-bucket
@@ -79,16 +79,41 @@ synthetic regression in `tests/test_yaw_bucket.py` instead — five
 hand-crafted scenarios verify the bucket-match bonus arithmetic, with
 an A/B counter-test to prove the bonus actually changes picks.
 
-Remaining (deferred):
+No remaining work — M6+ was evaluated and rejected.
 
-- **M6+ (RIFE interpolator)**: M5 + M6-candidate observability ship the
-  detection layer — when a cut can't be cleanly snapped, the merge log
-  emits an `M6-candidate` line naming the cut, the boundary time, the
-  source pair, and the reason (low yaw-conf in window, or yaw² over the
-  acceptance cap). Building the actual RIFE interpolator on top of that
-  is deferred until visual inspection of the rendered MP4s confirms the
-  flagged cuts are perceptibly jarring. RIFE without a verified problem
-  is over-engineering; the observability tells us whether it's worth it.
+**M6+ (RIFE interpolator) — rejected after visual evaluation.** The
+plan was to build RIFE-style frame interpolation on top of the
+M6-candidate flags so stubborn cuts (low yaw-conf, or best yaw² above
+the acceptance cap) wouldn't read as jumps. The README's stated
+trigger criterion was "visual inspection of rendered MP4s confirms
+the flagged cuts are perceptibly jarring."
+
+Visual inspection of the REBEL HEART reference render
+(`merged_e5e4b023b9.mp4`, 5 cuts, 4 of them M6-candidates) inverted
+that premise:
+
+| Cut | t (s) | What's actually happening | Verdict |
+|-----|-------|---------------------------|---------|
+| 0   | 7.870 | Same dance-practice studio, micro angle shift, same costume | Not jarring |
+| 1   | 10.210 | Practice video → MV close-up. Total scene/costume change | **Intentional outfit-swap** |
+| 2   | 13.030 | Music show #1 (cream jacket, daylight) → Music show #2 (gray jacket, purple stage) | **Intentional outfit-swap** |
+| 4   | 58.010 | Same music show, near-identical pose, micro angle shift | Not jarring |
+
+Cuts 1 and 2 are *exactly* the effect this project's tagline describes:
+"the dancer appears to instantly change outfit or venue." RIFE-morphing
+those cuts would erase the snap that creates the outfit-swap aesthetic.
+M5's pose-refine and M6's score-cap are still correct (they prevent the
+planner from snapping a cut onto a wildly-mismatched yaw frame within
+the *same* source-pair window), but the resulting "M6-candidate" flag
+turned out to mark cuts where the helper *correctly chose to stop*, not
+broken cuts that need smoothing.
+
+Cuts 0 and 4 are minor enough that no smoothing is warranted either.
+
+The M6-candidate logging stays in the codebase as observability for
+future songs whose pool composition might produce genuinely-bad cuts,
+but the interpolator track is closed: building RIFE for this aesthetic
+would be a regression, not an improvement.
 
 ## Tech stack
 
