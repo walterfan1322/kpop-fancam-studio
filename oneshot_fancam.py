@@ -307,6 +307,18 @@ def main():
                          "per source (cached per (video,start,dur)), worth "
                          "it to kill head-pop on hard-cut merges. "
                          "Only used when --merge-sources >= 2.")
+    ap.add_argument("--rotation", type=float, default=0.0, metavar="SEC",
+                    help="outfit-swap rotation cadence in seconds. When >0, "
+                         "the planner abandons greedy quality maximisation "
+                         "and forces a different source every SEC seconds — "
+                         "produces the visible 'jumps between stages and "
+                         "outfits every few seconds' aesthetic. Default 0 = "
+                         "greedy mode (one source can dominate the whole "
+                         "clip if it scores highest). Recommended values: "
+                         "3–5 with --merge-style hard_cut on a pool of "
+                         "stylistically-different sources (practice + music "
+                         "shows). Ignored when --merge-sources < 2 or when "
+                         "fewer than 2 ungated sources survived gating.")
     args = ap.parse_args()
     corners = None
     if args.delogo_corners:
@@ -717,6 +729,7 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                                        yaw_buckets=yaw_buckets,
                                        pose_refine=bool(args.pose),
                                        pose_refine_max_delta_frames=3,
+                                       rotation_sec=float(args.rotation),
                                        log_fn=log)
     # Output path: hash of sorted video ids for stable naming.
     sorted_ids = sorted(s.meta.video_id for s in merge_sources_list)

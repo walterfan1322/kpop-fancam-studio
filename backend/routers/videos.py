@@ -265,6 +265,13 @@ class OneshotIn(BaseModel):
     # on hard-cut merges. Ignored when merge_sources==1 (single-source
     # clips don't have cross-source head-position drift).
     use_pose: bool = False
+    # Outfit-swap rotation cadence in seconds. When >0, the merge planner
+    # abandons greedy quality maximisation and forces a different source
+    # every N seconds — produces the "Yujin jumps between stages/outfits
+    # every few seconds" aesthetic. 0 = greedy (one source can dominate
+    # the whole clip if it scores highest). Recommended values: 3.0–5.0
+    # with merge_style=hard_cut. Ignored when merge_sources<2.
+    rotation_sec: float = 0.0
 
 
 @router.post("/oneshot")
@@ -297,6 +304,12 @@ def start_oneshot(body: OneshotIn):
         args += ["--merge-style", style]
         if body.use_pose:
             args += ["--pose"]
+        # Clamp to sane range. 0 disables (greedy). Caps at 30s because
+        # longer than that and you've effectively got no rotation on a
+        # 60s clip — the slot count would be 1–2.
+        rot = max(0.0, min(30.0, float(body.rotation_sec)))
+        if rot > 0.0:
+            args += ["--rotation", f"{rot:.2f}"]
     job = jobs.start_job("oneshot", "oneshot_fancam.py", args)
     return {
         "id": job.id, "kind": job.kind, "status": job.status,

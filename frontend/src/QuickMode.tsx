@@ -21,6 +21,7 @@ type SavedJob = {
   mergeSources?: number
   mergeStyle?: 'xfade' | 'hard_cut'
   usePose?: boolean
+  rotationSec?: number
 }
 
 type Member = { latin: string; hangul: string; chinese: string }
@@ -89,6 +90,13 @@ export function QuickMode() {
   // consistent head placement and prefers same-angle cuts over 3/4 rotations.
   // Off by default because it only matters for the outfit-swap look.
   const [usePose, setUsePose] = useState(false)
+  // Outfit-swap rotation cadence in seconds. 0 = greedy (planner picks the
+  // single best source per bucket — typically collapses to one dominant
+  // source). >0 forces a different source every N seconds, sacrificing
+  // average target-on-screen time for a predictable, visible outfit/stage
+  // change cadence — the actual "fancam outfit-swap" effect. Recommended
+  // 3.0–5.0 paired with hard_cut. Ignored when merge is off.
+  const [rotationSec, setRotationSec] = useState(0)
   const [job, setJob] = useState<JobOut | null>(null)
   const [progress, setProgress] = useState<OneshotProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -147,6 +155,10 @@ export function QuickMode() {
         }
         if (typeof saved.usePose === 'boolean') {
           setUsePose(saved.usePose)
+        }
+        if (typeof saved.rotationSec === 'number'
+            && saved.rotationSec >= 0) {
+          setRotationSec(saved.rotationSec)
         }
         setSong(saved.song)
         setMemberLat(saved.memberLat)
@@ -274,6 +286,8 @@ export function QuickMode() {
         // would make the job log noisier without effect.
         ...(mergeEnabled ? { merge_style: mergeStyle } : {}),
         ...(mergeEnabled && usePose ? { use_pose: true } : {}),
+        ...(mergeEnabled && rotationSec > 0
+            ? { rotation_sec: rotationSec } : {}),
       })
       setJob(j)
       const saved: SavedJob = {
@@ -285,6 +299,7 @@ export function QuickMode() {
         mergeSources: mergeEnabled ? mergeSources : 1,
         mergeStyle: mergeEnabled ? mergeStyle : undefined,
         usePose: mergeEnabled ? usePose : undefined,
+        rotationSec: mergeEnabled ? rotationSec : undefined,
       }
       try { localStorage.setItem(SAVED_JOB_KEY, JSON.stringify(saved)) } catch {}
     } catch (e) {
@@ -398,6 +413,19 @@ export function QuickMode() {
                        onChange={e => setUsePose(e.target.checked)} />
                 <span>{t('quickPoseHint')}</span>
               </label>
+
+              <label>{t('quickRotation')}</label>
+              <div className="merge-style-row">
+                <input className="count-input" type="number"
+                       min={0} max={30} step={0.5}
+                       value={rotationSec}
+                       onChange={e => setRotationSec(
+                         Math.max(0, Math.min(30,
+                           Number(e.target.value) || 0)))} />
+                <div className="merge-style-hint">
+                  {t('quickRotationHint')}
+                </div>
+              </div>
             </>
           )}
         </div>

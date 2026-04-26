@@ -134,6 +134,8 @@ const dict = {
   quickMergeStyleHint: { en: 'Hard cut only works well when sources share the same angle/framing', zh: '硬切只在各來源角度框取一致時才好看' },
   quickPose: { en: 'Pose-guided framing', zh: '姿態對齊取景' },
   quickPoseHint: { en: 'Use pose keypoints to lock head position and prefer same-angle cuts (adds ~30s/source of CPU inference)', zh: '用姿態關鍵點鎖定頭部位置並偏好同角度切換 (每部來源多耗 ~30 秒 CPU)' },
+  quickRotation: { en: 'Outfit-swap cadence (s)', zh: '換裝/換舞台節奏 (秒)' },
+  quickRotationHint: { en: '0 = greedy (best source wins). 3–5 = forced source-swap every N seconds for visible outfit/stage changes. Pair with hard cut.', zh: '0 = 貪婪模式 (最佳來源勝出)。3–5 = 每 N 秒強制換來源以呈現換裝/換舞台。建議搭配硬切。' },
   quickGo: { en: '✨ Generate', zh: '✨ 產生' },
   quickRunning: { en: 'Running…', zh: '執行中…' },
   quickNoSongs: { en: 'This group has no downloaded mp3s yet.', zh: '此團體尚未下載任何 mp3。' },

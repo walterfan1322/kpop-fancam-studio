@@ -385,6 +385,7 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                yaw_buckets: "list[tuple[str, float | None]] | None" = None,
                pose_refine: bool = False,
                pose_refine_max_delta_frames: int = 3,
+               rotation_sec: float = 0.0,
                log_fn=print) -> list[MergeChunk]:
     """Decide, per song-second bucket, which source to use. Returns the
     resulting list of merge chunks covering [0, clip_dur] contiguously.
@@ -566,6 +567,95 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
             log_fn("[merge] yaw plan: " +
                    ", ".join(f"{b}={vids}" for b, vids in by_bucket.items()))
 
+    # ----- Rotation mode (outfit-swap cadence) -----
+    # When `rotation_sec > 0` AND there are at least 2 ungated sources, the
+    # planner abandons greedy per-bucket argmax in favour of forced
+    # round-robin: divide the clip into slots of ~rotation_sec each, and
+    # for each slot pick the highest-quality source that (a) has target
+    # coverage in that window AND (b) is different from the previous slot's
+    # pick. This is what the README means by "outfit-swap visual impact" —
+    # the dancer appears to instantly change outfit/venue every few seconds.
+    # The greedy mode (rotation_sec=0) maximises target-on-screen time but
+    # tends to collapse to one dominant source when one fancam scores higher
+    # on quality than the others. Rotation explicitly trades raw quality for
+    # source diversity so the cut cadence is predictable and visible.
+    ungated_idx = [i for i in range(len(sources)) if i not in gated_sources]
+    use_rotation = rotation_sec > 0.0 and len(ungated_idx) >= 2
+    if use_rotation:
+        slot_buckets = max(1, int(round(rotation_sec / step_sec)))
+        n_slots = max(1, int(np.ceil(n_buckets / slot_buckets)))
+        picks: list[int] = [-1] * n_buckets
+        last_src = -1
+        slot_log: list[str] = []
+        # Track how many slots in a row have been the same source so we
+        # can log it. With group-cam sources where the target's face is
+        # tracked in only 13–42% of buckets, naive coverage>0 gating means
+        # most slots only have ONE eligible source — collapsing rotation
+        # back to a single dominant source. We avoid that by letting the
+        # rotation pick from ALL ungated sources when only one has
+        # coverage in the slot, and only falling all the way through to
+        # gated sources as a last resort.
+        repeat_run = 0
+        for slot in range(n_slots):
+            b0 = slot * slot_buckets
+            b1 = min(n_buckets, b0 + slot_buckets)
+            # Tier 1 — sources whose target IS visible in this slot,
+            # ranked by mean quality. Preferred when available because
+            # the resulting crop will be face-tracked rather than
+            # centre-fallback.
+            covered: dict[int, float] = {}
+            for i in ungated_idx:
+                cov = float(coverage_masks[i][b0:b1].mean())
+                if cov <= 0.0:
+                    continue
+                covered[i] = float(quality_masks[i][b0:b1].mean())
+            # Tier 2 — ALL ungated sources (whether or not target is
+            # visible in this slot). Used to satisfy the "different from
+            # last_src" diversity invariant when Tier 1 only contains
+            # last_src. Centre-crop on these slots may show an off-target
+            # member; the outfit-swap aesthetic explicitly accepts that
+            # trade in exchange for a predictable cut cadence.
+            def _pick(pool: dict[int, float], avoid: int) -> int | None:
+                if not pool:
+                    return None
+                ranked = sorted(pool.items(), key=lambda kv: -kv[1])
+                for i, _ in ranked:
+                    if i != avoid:
+                        return i
+                return None
+            best = _pick(covered, last_src)
+            if best is None:
+                # Tier 1 didn't yield a fresh source — broaden to ALL
+                # ungated sources, scored by their (possibly zero) qual
+                # in this slot.
+                fallback_pool = {i: float(quality_masks[i][b0:b1].mean())
+                                 for i in ungated_idx}
+                best = _pick(fallback_pool, last_src)
+            if best is None:
+                # Still nothing different — accept repeat (or fall
+                # through to gated/first source if last_src is unset).
+                if last_src >= 0:
+                    best = last_src
+                elif covered:
+                    best = max(covered.items(), key=lambda kv: kv[1])[0]
+                elif ungated_idx:
+                    best = ungated_idx[0]
+                else:
+                    best = gated_sources[0]
+            for b in range(b0, b1):
+                picks[b] = best
+            if best == last_src:
+                repeat_run += 1
+            else:
+                repeat_run = 0
+            last_src = best
+            slot_log.append(f"slot{slot}@[{b0},{b1}]→"
+                            f"{sources[best].meta.video_id}")
+        log_fn(f"[merge] rotation mode (slot={rotation_sec:.1f}s, "
+               f"n_slots={n_slots}, n_ungated={len(ungated_idx)}): "
+               + " ".join(slot_log))
+
+    # ----- Greedy mode (default; max target-on-screen time) -----
     # Per-bucket source selection by argmax of (quality + primary bonus
     # + yaw-match bonus). Gated sources have qm=0 always, so ungated
     # sources with any target visible will always outrank them. When no
@@ -573,44 +663,45 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     # default (qm=0 > -1 initial). When NOTHING covers, fall back to a
     # gated source if any (safe centre-crop) before the ungated rank-0
     # (wandering trajectory).
-    picks: list[int] = []
-    prev_bucket: str | None = None
-    for t in range(n_buckets):
-        best_i = -1
-        best_q = -1.0
-        for i, s in enumerate(sources):
-            if not coverage_masks[i][t]:
-                continue
-            q = float(quality_masks[i][t])
-            if s.meta.cluster_key == primary_key:
-                q += PRIMARY_BONUS
-            # M4b: match bonus only when we have a prior pick with a
-            # known bucket AND this source's bucket is known AND matches.
-            # `unknown` (v1 cache or too few confident frames) never
-            # earns the bonus — treat as neutral.
-            if (yaw_bucket_by_src and prev_bucket is not None
-                    and yaw_bucket_by_src[i] != "unknown"
-                    and yaw_bucket_by_src[i] == prev_bucket):
-                q += YAW_MATCH_BONUS
-            if q > best_q:
-                best_q = q
-                best_i = i
-        if best_i < 0:
-            # No source has the target in this bucket. Prefer a gated
-            # source (forced centre-crop) over an ungated rank-0 whose
-            # interpolated trajectory may follow a peer member.
-            if gated_sources:
-                best_i = gated_sources[0]
-            else:
-                best_i = cluster_members[primary_key][0]
-        picks.append(best_i)
-        # Carry forward the newly picked source's bucket — but DON'T
-        # overwrite with "unknown" (we want to remember the last known
-        # bucket across gaps).
-        if yaw_bucket_by_src:
-            b = yaw_bucket_by_src[best_i]
-            if b != "unknown":
-                prev_bucket = b
+    if not use_rotation:
+        picks = []
+        prev_bucket: str | None = None
+        for t in range(n_buckets):
+            best_i = -1
+            best_q = -1.0
+            for i, s in enumerate(sources):
+                if not coverage_masks[i][t]:
+                    continue
+                q = float(quality_masks[i][t])
+                if s.meta.cluster_key == primary_key:
+                    q += PRIMARY_BONUS
+                # M4b: match bonus only when we have a prior pick with a
+                # known bucket AND this source's bucket is known AND matches.
+                # `unknown` (v1 cache or too few confident frames) never
+                # earns the bonus — treat as neutral.
+                if (yaw_bucket_by_src and prev_bucket is not None
+                        and yaw_bucket_by_src[i] != "unknown"
+                        and yaw_bucket_by_src[i] == prev_bucket):
+                    q += YAW_MATCH_BONUS
+                if q > best_q:
+                    best_q = q
+                    best_i = i
+            if best_i < 0:
+                # No source has the target in this bucket. Prefer a gated
+                # source (forced centre-crop) over an ungated rank-0 whose
+                # interpolated trajectory may follow a peer member.
+                if gated_sources:
+                    best_i = gated_sources[0]
+                else:
+                    best_i = cluster_members[primary_key][0]
+            picks.append(best_i)
+            # Carry forward the newly picked source's bucket — but DON'T
+            # overwrite with "unknown" (we want to remember the last known
+            # bucket across gaps).
+            if yaw_bucket_by_src:
+                b = yaw_bucket_by_src[best_i]
+                if b != "unknown":
+                    prev_bucket = b
 
     # Sticky-fallback pass: when a run of consecutive buckets has raw q=0
     # for every source (nobody is actually tracking the target there), the
@@ -620,43 +711,54 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     # forward the source that was just in use (or pull back the next one,
     # if the run is at the head). This preserves stage continuity in the
     # "nobody knows where the target is" regions.
-    raw_positive = np.zeros(n_buckets, dtype=bool)
-    for t in range(n_buckets):
-        for i in range(len(sources)):
-            if coverage_masks[i][t] and float(quality_masks[i][t]) > 0.0:
-                raw_positive[t] = True
-                break
-    t = 0
-    sticky_overrides = 0
-    while t < n_buckets:
-        if raw_positive[t]:
-            t += 1
-            continue
-        run_start = t
-        while t < n_buckets and not raw_positive[t]:
-            t += 1
-        run_end = t  # exclusive
-        if run_start > 0:
-            anchor = picks[run_start - 1]
-        elif run_end < n_buckets:
-            anchor = picks[run_end]
-        else:
-            continue  # entire clip is q=0, leave the original fallback
-        for k in range(run_start, run_end):
-            if picks[k] != anchor:
-                picks[k] = anchor
-                sticky_overrides += 1
-    if sticky_overrides:
-        log_fn(f"[merge] sticky-fallback: carried forward source "
-               f"on {sticky_overrides} q=0 bucket(s) for stage continuity")
+    #
+    # IMPORTANT: in rotation mode we DELIBERATELY want source diversity even
+    # in q=0 regions — sticky-fallback would collapse a 32-bucket rotation
+    # window down to a single anchor source and defeat the entire purpose
+    # of --rotation. Skip both this pass and the A-B-A smoother (which is
+    # also a continuity heuristic) when rotation is engaged.
+    if not use_rotation:
+        raw_positive = np.zeros(n_buckets, dtype=bool)
+        for t in range(n_buckets):
+            for i in range(len(sources)):
+                if coverage_masks[i][t] and float(quality_masks[i][t]) > 0.0:
+                    raw_positive[t] = True
+                    break
+        t = 0
+        sticky_overrides = 0
+        while t < n_buckets:
+            if raw_positive[t]:
+                t += 1
+                continue
+            run_start = t
+            while t < n_buckets and not raw_positive[t]:
+                t += 1
+            run_end = t  # exclusive
+            if run_start > 0:
+                anchor = picks[run_start - 1]
+            elif run_end < n_buckets:
+                anchor = picks[run_end]
+            else:
+                continue  # entire clip is q=0, leave the original fallback
+            for k in range(run_start, run_end):
+                if picks[k] != anchor:
+                    picks[k] = anchor
+                    sticky_overrides += 1
+        if sticky_overrides:
+            log_fn(f"[merge] sticky-fallback: carried forward source "
+                   f"on {sticky_overrides} q=0 bucket(s) for stage continuity")
 
     # Smooth 1-bucket isolated flips (A-B-A → A-A-A). Avoids a 1-second cut
-    # to another angle and back, which reads as a glitch.
+    # to another angle and back, which reads as a glitch. Skipped in rotation
+    # mode — rotation produces multi-bucket runs (≥ rotation_sec/step_sec)
+    # so this pass shouldn't trigger anyway, but explicitly disabling it
+    # documents intent and protects against off-by-one slot-edge cases.
     smoothed = picks[:]
-    for t in range(1, n_buckets - 1):
-        if (smoothed[t] != smoothed[t - 1]
-                and smoothed[t - 1] == smoothed[t + 1]):
-            smoothed[t] = smoothed[t - 1]
+    if not use_rotation:
+        for t in range(1, n_buckets - 1):
+            if (smoothed[t] != smoothed[t - 1]
+                    and smoothed[t - 1] == smoothed[t + 1]):
+                smoothed[t] = smoothed[t - 1]
 
     # Collapse consecutive same-source buckets into chunks.
     chunks: list[MergeChunk] = []
