@@ -307,18 +307,21 @@ def main():
                          "per source (cached per (video,start,dur)), worth "
                          "it to kill head-pop on hard-cut merges. "
                          "Only used when --merge-sources >= 2.")
-    ap.add_argument("--rotation", type=float, default=0.0, metavar="SEC",
+    ap.add_argument("--rotation", type=str, default="0",
+                    metavar="SEC|MIN-MAX",
                     help="outfit-swap rotation cadence in seconds. When >0, "
                          "the planner abandons greedy quality maximisation "
-                         "and forces a different source every SEC seconds — "
+                         "and forces a different source every N seconds — "
                          "produces the visible 'jumps between stages and "
-                         "outfits every few seconds' aesthetic. Default 0 = "
-                         "greedy mode (one source can dominate the whole "
-                         "clip if it scores highest). Recommended values: "
-                         "3–5 with --merge-style hard_cut on a pool of "
-                         "stylistically-different sources (practice + music "
-                         "shows). Ignored when --merge-sources < 2 or when "
-                         "fewer than 2 ungated sources survived gating.")
+                         "outfits every few seconds' aesthetic. Two forms: "
+                         "'--rotation 4' (fixed 4s slots) or "
+                         "'--rotation 4-8' (each slot drawn uniformly from "
+                         "[4s, 8s], reproducible per song). Default '0' = "
+                         "greedy mode (one source can dominate). Recommended: "
+                         "'4-8' with --merge-style hard_cut on a pool of "
+                         "stylistically-different sources. Ignored when "
+                         "--merge-sources < 2 or fewer than 2 ungated "
+                         "sources survived gating.")
     args = ap.parse_args()
     corners = None
     if args.delogo_corners:
@@ -720,6 +723,27 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                 pre_head_tracks.append(ht)
             yaw_buckets = pose_track.session_yaw_bucket(pre_head_tracks)
 
+    # Parse --rotation: accepts "0", "4", or "4-8" (min-max range).
+    # Range form draws each slot's duration uniformly from [min, max] —
+    # produces less mechanical cadence than fixed slots. Seeded by the
+    # source-id hash so repeated runs of the same song produce the
+    # same boundaries.
+    rot_str = (args.rotation or "0").strip()
+    if "-" in rot_str:
+        try:
+            _a, _b = rot_str.split("-", 1)
+            rot_min, rot_max = float(_a), float(_b)
+        except ValueError as e:
+            raise SystemExit(f"--rotation '{rot_str}' is not 'N' or 'MIN-MAX'") from e
+        if rot_max < rot_min:
+            rot_min, rot_max = rot_max, rot_min
+    else:
+        rot_min = float(rot_str)
+        rot_max = rot_min
+    rot_seed = int(hashlib.sha1(
+        "|".join(sorted(s.meta.video_id for s in merge_sources_list))
+        .encode("utf-8")).hexdigest()[:8], 16)
+
     # Plan + render. Pose-refine reuses the head_tracks already
     # attached to each source above (s.head), so it costs only a few
     # ms per cut to evaluate the ±3 frame yaw window.
@@ -729,7 +753,9 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                                        yaw_buckets=yaw_buckets,
                                        pose_refine=bool(args.pose),
                                        pose_refine_max_delta_frames=3,
-                                       rotation_sec=float(args.rotation),
+                                       rotation_sec=rot_min,
+                                       rotation_max_sec=rot_max,
+                                       rotation_seed=rot_seed,
                                        log_fn=log)
     # Output path: hash of sorted video ids for stable naming.
     sorted_ids = sorted(s.meta.video_id for s in merge_sources_list)

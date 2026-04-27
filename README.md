@@ -220,8 +220,18 @@ CLI mode (the UI's "Go" button is just a wrapper around this):
   --force-landscape \
   --merge-sources 3 \
   --merge-style hard_cut \
-  --pose
+  --pose \
+  --rotation 4-8
 ```
+
+`--rotation SEC` or `--rotation MIN-MAX`: forces the merge planner to switch
+sources every N seconds (or every random N∈[MIN,MAX] seconds) instead of
+letting the quality scorer decide. With `--rotation 4-8` and 3 ungated sources
+of mixed contexts (practice + Music Bank + Inkigayo), a 60 s clip lands ~10
+chunks of 4–8 s each, jumping between practice studio / broadcast stages —
+that is the "outfit-swap every few seconds" look. Slot durations are seeded
+by a hash of the source IDs so the same song reproduces. Omit the flag (or
+pass `0`) for the legacy quality-only planner.
 
 Output: `clips/<group>/<song>/merged_*.mp4` (1080×1920, 30 fps, h264+aac).
 

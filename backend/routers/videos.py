@@ -269,9 +269,14 @@ class OneshotIn(BaseModel):
     # abandons greedy quality maximisation and forces a different source
     # every N seconds — produces the "Yujin jumps between stages/outfits
     # every few seconds" aesthetic. 0 = greedy (one source can dominate
-    # the whole clip if it scores highest). Recommended values: 3.0–5.0
-    # with merge_style=hard_cut. Ignored when merge_sources<2.
+    # the whole clip if it scores highest). Ignored when merge_sources<2.
     rotation_sec: float = 0.0
+    # Upper bound for variable-cadence rotation. When > rotation_sec, each
+    # slot's duration is drawn uniformly from [rotation_sec, rotation_max_sec]
+    # — feels less metronomic than fixed slots. Recommended: 4.0/8.0 paired
+    # with merge_style=hard_cut. Ignored when rotation_sec==0 or this value
+    # is <= rotation_sec.
+    rotation_max_sec: float = 0.0
 
 
 @router.post("/oneshot")
@@ -307,9 +312,16 @@ def start_oneshot(body: OneshotIn):
         # Clamp to sane range. 0 disables (greedy). Caps at 30s because
         # longer than that and you've effectively got no rotation on a
         # 60s clip — the slot count would be 1–2.
-        rot = max(0.0, min(30.0, float(body.rotation_sec)))
-        if rot > 0.0:
-            args += ["--rotation", f"{rot:.2f}"]
+        rot_min = max(0.0, min(30.0, float(body.rotation_sec)))
+        rot_max = max(0.0, min(30.0, float(body.rotation_max_sec)))
+        if rot_min > 0.0:
+            # Range form when caller asked for variable cadence; otherwise
+            # fixed. plan_merge silently treats rot_max<=rot_min as fixed,
+            # but emit the range form on the wire so logs are explicit.
+            if rot_max > rot_min:
+                args += ["--rotation", f"{rot_min:.2f}-{rot_max:.2f}"]
+            else:
+                args += ["--rotation", f"{rot_min:.2f}"]
     job = jobs.start_job("oneshot", "oneshot_fancam.py", args)
     return {
         "id": job.id, "kind": job.kind, "status": job.status,

@@ -386,6 +386,8 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                pose_refine: bool = False,
                pose_refine_max_delta_frames: int = 3,
                rotation_sec: float = 0.0,
+               rotation_max_sec: float = 0.0,
+               rotation_seed: int = 0,
                log_fn=print) -> list[MergeChunk]:
     """Decide, per song-second bucket, which source to use. Returns the
     resulting list of merge chunks covering [0, clip_dur] contiguously.
@@ -582,23 +584,42 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     ungated_idx = [i for i in range(len(sources)) if i not in gated_sources]
     use_rotation = rotation_sec > 0.0 and len(ungated_idx) >= 2
     if use_rotation:
-        slot_buckets = max(1, int(round(rotation_sec / step_sec)))
-        n_slots = max(1, int(np.ceil(n_buckets / slot_buckets)))
+        # Build slot boundaries. Two modes:
+        #   • Fixed: rotation_max_sec <= rotation_sec → every slot is
+        #     rotation_sec long. Predictable but mechanical.
+        #   • Range: rotation_max_sec > rotation_sec → each slot's
+        #     duration is drawn uniformly from [rotation_sec,
+        #     rotation_max_sec]. Reads more naturally — varies the cut
+        #     cadence so the eye doesn't lock onto a metronome. Seeded
+        #     by rotation_seed for reproducibility (same inputs → same
+        #     boundaries).
+        rng = (np.random.default_rng(rotation_seed)
+               if rotation_max_sec > rotation_sec
+               else None)
+        slot_bounds: list[tuple[int, int]] = []
+        cursor = 0
+        while cursor < n_buckets:
+            if rng is not None:
+                slot_dur = float(rng.uniform(rotation_sec, rotation_max_sec))
+            else:
+                slot_dur = rotation_sec
+            slot_bk = max(1, int(round(slot_dur / step_sec)))
+            end = min(n_buckets, cursor + slot_bk)
+            slot_bounds.append((cursor, end))
+            cursor = end
+        n_slots = len(slot_bounds)
         picks: list[int] = [-1] * n_buckets
         last_src = -1
         slot_log: list[str] = []
-        # Track how many slots in a row have been the same source so we
-        # can log it. With group-cam sources where the target's face is
-        # tracked in only 13–42% of buckets, naive coverage>0 gating means
-        # most slots only have ONE eligible source — collapsing rotation
+        # With group-cam sources where the target's face is tracked in
+        # only 13–42% of buckets, naive coverage>0 gating means most
+        # slots only have ONE eligible source — collapsing rotation
         # back to a single dominant source. We avoid that by letting the
         # rotation pick from ALL ungated sources when only one has
         # coverage in the slot, and only falling all the way through to
         # gated sources as a last resort.
         repeat_run = 0
-        for slot in range(n_slots):
-            b0 = slot * slot_buckets
-            b1 = min(n_buckets, b0 + slot_buckets)
+        for slot, (b0, b1) in enumerate(slot_bounds):
             # Tier 1 — sources whose target IS visible in this slot,
             # ranked by mean quality. Preferred when available because
             # the resulting crop will be face-tracked rather than
@@ -651,7 +672,10 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
             last_src = best
             slot_log.append(f"slot{slot}@[{b0},{b1}]→"
                             f"{sources[best].meta.video_id}")
-        log_fn(f"[merge] rotation mode (slot={rotation_sec:.1f}s, "
+        cadence_desc = (f"{rotation_sec:.1f}-{rotation_max_sec:.1f}s"
+                        if rotation_max_sec > rotation_sec
+                        else f"{rotation_sec:.1f}s")
+        log_fn(f"[merge] rotation mode (slot={cadence_desc}, "
                f"n_slots={n_slots}, n_ungated={len(ungated_idx)}): "
                + " ".join(slot_log))
 

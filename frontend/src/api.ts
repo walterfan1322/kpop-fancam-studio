@@ -157,7 +157,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ video_stem }),
     }),
-  oneshot: (body: { group: string; song: string; member_lat: string; member_han?: string; count: number; delogo_corners?: ('tl' | 'tr' | 'bl' | 'br' | 'auto')[]; force_landscape?: boolean; merge_sources?: number; merge_style?: 'xfade' | 'hard_cut'; use_pose?: boolean; rotation_sec?: number }) =>
+  oneshot: (body: { group: string; song: string; member_lat: string; member_han?: string; count: number; delogo_corners?: ('tl' | 'tr' | 'bl' | 'br' | 'auto')[]; force_landscape?: boolean; merge_sources?: number; merge_style?: 'xfade' | 'hard_cut'; use_pose?: boolean; rotation_sec?: number; rotation_max_sec?: number }) =>
     call<JobOut>('/api/videos/oneshot', {
       method: 'POST',
       body: JSON.stringify(body),

@@ -22,6 +22,7 @@ type SavedJob = {
   mergeStyle?: 'xfade' | 'hard_cut'
   usePose?: boolean
   rotationSec?: number
+  rotationMaxSec?: number
 }
 
 type Member = { latin: string; hangul: string; chinese: string }
@@ -94,9 +95,13 @@ export function QuickMode() {
   // single best source per bucket — typically collapses to one dominant
   // source). >0 forces a different source every N seconds, sacrificing
   // average target-on-screen time for a predictable, visible outfit/stage
-  // change cadence — the actual "fancam outfit-swap" effect. Recommended
-  // 3.0–5.0 paired with hard_cut. Ignored when merge is off.
+  // change cadence — the actual "fancam outfit-swap" effect.
+  // When rotationMax > rotationMin, each slot's duration is randomly
+  // drawn from [min, max] — feels less metronomic than a fixed cadence.
+  // Default 4–8s with hard_cut: visible swap every few seconds, but the
+  // eye doesn't lock onto an obvious 4-second beat.
   const [rotationSec, setRotationSec] = useState(0)
+  const [rotationMaxSec, setRotationMaxSec] = useState(0)
   const [job, setJob] = useState<JobOut | null>(null)
   const [progress, setProgress] = useState<OneshotProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -159,6 +164,10 @@ export function QuickMode() {
         if (typeof saved.rotationSec === 'number'
             && saved.rotationSec >= 0) {
           setRotationSec(saved.rotationSec)
+        }
+        if (typeof saved.rotationMaxSec === 'number'
+            && saved.rotationMaxSec >= 0) {
+          setRotationMaxSec(saved.rotationMaxSec)
         }
         setSong(saved.song)
         setMemberLat(saved.memberLat)
@@ -287,7 +296,10 @@ export function QuickMode() {
         ...(mergeEnabled ? { merge_style: mergeStyle } : {}),
         ...(mergeEnabled && usePose ? { use_pose: true } : {}),
         ...(mergeEnabled && rotationSec > 0
-            ? { rotation_sec: rotationSec } : {}),
+            ? { rotation_sec: rotationSec,
+                ...(rotationMaxSec > rotationSec
+                    ? { rotation_max_sec: rotationMaxSec } : {}) }
+            : {}),
       })
       setJob(j)
       const saved: SavedJob = {
@@ -300,6 +312,7 @@ export function QuickMode() {
         mergeStyle: mergeEnabled ? mergeStyle : undefined,
         usePose: mergeEnabled ? usePose : undefined,
         rotationSec: mergeEnabled ? rotationSec : undefined,
+        rotationMaxSec: mergeEnabled ? rotationMaxSec : undefined,
       }
       try { localStorage.setItem(SAVED_JOB_KEY, JSON.stringify(saved)) } catch {}
     } catch (e) {
@@ -419,7 +432,16 @@ export function QuickMode() {
                 <input className="count-input" type="number"
                        min={0} max={30} step={0.5}
                        value={rotationSec}
+                       title={t('quickRotationMin')}
                        onChange={e => setRotationSec(
+                         Math.max(0, Math.min(30,
+                           Number(e.target.value) || 0)))} />
+                <span style={{ alignSelf: 'center' }}>–</span>
+                <input className="count-input" type="number"
+                       min={0} max={30} step={0.5}
+                       value={rotationMaxSec}
+                       title={t('quickRotationMax')}
+                       onChange={e => setRotationMaxSec(
                          Math.max(0, Math.min(30,
                            Number(e.target.value) || 0)))} />
                 <div className="merge-style-hint">
