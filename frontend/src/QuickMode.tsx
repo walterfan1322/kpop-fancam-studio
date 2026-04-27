@@ -100,8 +100,11 @@ export function QuickMode() {
   // drawn from [min, max] — feels less metronomic than a fixed cadence.
   // Default 4–8s with hard_cut: visible swap every few seconds, but the
   // eye doesn't lock onto an obvious 4-second beat.
-  const [rotationSec, setRotationSec] = useState(0)
-  const [rotationMaxSec, setRotationMaxSec] = useState(0)
+  // Default 4-8s: empirically the sweet spot for outfit-swap visual impact.
+  // BLACKHOLE / REBEL HEART / After LIKE all clear ≥8 cuts and ≥2 distinct
+  // visual contexts at this cadence. Set min=0 to disable rotation entirely.
+  const [rotationSec, setRotationSec] = useState(4)
+  const [rotationMaxSec, setRotationMaxSec] = useState(8)
   const [job, setJob] = useState<JobOut | null>(null)
   const [progress, setProgress] = useState<OneshotProgress | null>(null)
   const [err, setErr] = useState<string | null>(null)

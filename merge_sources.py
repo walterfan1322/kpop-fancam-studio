@@ -388,6 +388,7 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                rotation_sec: float = 0.0,
                rotation_max_sec: float = 0.0,
                rotation_seed: int = 0,
+               rotation_min_coverage: float = 0.20,
                log_fn=print) -> list[MergeChunk]:
     """Decide, per song-second bucket, which source to use. Returns the
     resulting list of merge chunks covering [0, clip_dur] contiguously.
@@ -582,8 +583,30 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     # on quality than the others. Rotation explicitly trades raw quality for
     # source diversity so the cut cadence is predictable and visible.
     ungated_idx = [i for i in range(len(sources)) if i not in gated_sources]
+    # Sources whose overall target coverage is below `rotation_min_coverage`
+    # tend to produce tracker drift when picked in rotation: only a small
+    # fraction of frames have a confirmed gallery match for the target, and
+    # the rest of the chunk lets the bbox wander or fall back to the
+    # last-known position (which may sit on a peer member). Demote them to
+    # Tier-2 only — they can still satisfy the diversity invariant when no
+    # high-coverage source is fresh, but the planner won't preferentially
+    # pick them.
+    rotation_preferred_idx = [
+        i for i in ungated_idx
+        if float(coverage_masks[i].mean()) >= rotation_min_coverage
+    ]
+    rotation_demoted_idx = [
+        i for i in ungated_idx if i not in rotation_preferred_idx
+    ]
     use_rotation = rotation_sec > 0.0 and len(ungated_idx) >= 2
     if use_rotation:
+        if rotation_demoted_idx:
+            log_fn("[merge] rotation min-coverage filter "
+                   f"(threshold={rotation_min_coverage:.2f}): demoting "
+                   + ", ".join(
+                       f"{sources[i].meta.video_id}"
+                       f"(cov={float(coverage_masks[i].mean()):.2f})"
+                       for i in rotation_demoted_idx))
         # Build slot boundaries. Two modes:
         #   • Fixed: rotation_max_sec <= rotation_sec → every slot is
         #     rotation_sec long. Predictable but mechanical.
@@ -620,12 +643,14 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
         # gated sources as a last resort.
         repeat_run = 0
         for slot, (b0, b1) in enumerate(slot_bounds):
-            # Tier 1 — sources whose target IS visible in this slot,
-            # ranked by mean quality. Preferred when available because
-            # the resulting crop will be face-tracked rather than
-            # centre-fallback.
+            # Tier 1 — high-overall-coverage sources whose target IS
+            # visible in this slot, ranked by mean quality. Preferred
+            # when available because the resulting crop will be
+            # face-tracked rather than centre-fallback, AND the source
+            # has enough confirmed gallery matches across the song that
+            # the tracker is unlikely to be locked onto a peer member.
             covered: dict[int, float] = {}
-            for i in ungated_idx:
+            for i in rotation_preferred_idx:
                 cov = float(coverage_masks[i][b0:b1].mean())
                 if cov <= 0.0:
                     continue
@@ -646,9 +671,20 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                 return None
             best = _pick(covered, last_src)
             if best is None:
-                # Tier 1 didn't yield a fresh source — broaden to ALL
-                # ungated sources, scored by their (possibly zero) qual
-                # in this slot.
+                # Tier 1.5 — preferred sources only, regardless of slot
+                # coverage. Honours the min-coverage demotion: when the
+                # only Tier-1 candidate is `last_src`, we'd rather force
+                # a centre-fallback render on the OTHER preferred source
+                # than fall through to a demoted (low-overall-cov)
+                # source where the tracker is likely locked onto a peer.
+                pref_pool = {i: float(quality_masks[i][b0:b1].mean())
+                             for i in rotation_preferred_idx}
+                best = _pick(pref_pool, last_src)
+            if best is None:
+                # Tier 2 — ALL ungated sources (including demoted).
+                # Last resort to satisfy the diversity invariant when
+                # Tier 1.5 also only contains last_src (e.g. when only
+                # one ungated source is preferred).
                 fallback_pool = {i: float(quality_masks[i][b0:b1].mean())
                                  for i in ungated_idx}
                 best = _pick(fallback_pool, last_src)

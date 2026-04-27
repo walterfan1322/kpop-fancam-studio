@@ -322,6 +322,17 @@ def main():
                          "stylistically-different sources. Ignored when "
                          "--merge-sources < 2 or fewer than 2 ungated "
                          "sources survived gating.")
+    ap.add_argument("--rotation-min-coverage", type=float, default=0.20,
+                    help="overall target-coverage floor for a source to be "
+                         "preferred in rotation Tier-1. Sources below this "
+                         "threshold are demoted to Tier-2 fallback only — "
+                         "the planner won't preferentially pick them, but "
+                         "they're still available when no high-coverage "
+                         "source can satisfy the diversity invariant. "
+                         "Mitigates tracker-drift on sources where the "
+                         "target's face is rarely confirmed against the "
+                         "gallery (those chunks tend to lock onto a peer "
+                         "member). Default 0.20.")
     args = ap.parse_args()
     corners = None
     if args.delogo_corners:
@@ -756,6 +767,7 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                                        rotation_sec=rot_min,
                                        rotation_max_sec=rot_max,
                                        rotation_seed=rot_seed,
+                                       rotation_min_coverage=float(args.rotation_min_coverage),
                                        log_fn=log)
     # Output path: hash of sorted video ids for stable naming.
     sorted_ids = sorted(s.meta.video_id for s in merge_sources_list)
