@@ -74,23 +74,30 @@ export function QuickMode() {
   const [membersLoading, setMembersLoading] = useState(false)
   const [count, setCount] = useState(1)
   const [autoDelogo, setAutoDelogo] = useState(true)
-  const [forceLandscape, setForceLandscape] = useState(false)
+  // Default ON: outfit-swap workflow specifically wants music-show /
+  // performance sources (16:9 broadcast cameras + portrait fancams in
+  // merge mode), and excludes solo direct-cams of OTHER members which
+  // would never resolve to the target. Users producing single-source
+  // clips can untick this.
+  const [forceLandscape, setForceLandscape] = useState(true)
   // Multi-source merge: when enabled, we pull up to `mergeSources` matched
   // source videos and fuse them into ONE clip that hops between angles
-  // second-by-second. Disabled by default because it's slower and costs
-  // more bandwidth (N downloads + tracked-segment computes).
-  const [mergeEnabled, setMergeEnabled] = useState(false)
+  // second-by-second. Default ON: outfit-swap is the primary use case;
+  // single-source clips are the fallback rather than the default.
+  const [mergeEnabled, setMergeEnabled] = useState(true)
   const [mergeSources, setMergeSources] = useState(3)
   // hard_cut is the "outfit-swap fancam" look — instant outfit/venue change
-  // at each merge boundary. Default stays on xfade because hard-cut only
-  // looks good once sources are same-angle same-framing (M3 canonical
-  // framing). Ignored when merge is off.
-  const [mergeStyle, setMergeStyle] = useState<'xfade' | 'hard_cut'>('xfade')
+  // at each merge boundary. Default ON because the rotation+pose pipeline
+  // produces canonically-framed sources where hard cuts look intentional;
+  // xfade is kept as a fallback for users mixing mismatched framings.
+  const [mergeStyle, setMergeStyle] = useState<'xfade' | 'hard_cut'>('hard_cut')
   // Pose-guided canonical framing (M3b) + angle-bucket cut preference
   // (M4b). Adds ~30s of CPU inference per source but produces much more
   // consistent head placement and prefers same-angle cuts over 3/4 rotations.
-  // Off by default because it only matters for the outfit-swap look.
-  const [usePose, setUsePose] = useState(false)
+  // Default ON: head-pop on hard cuts is the most visible artifact and
+  // pose-anchored framing is what makes hard_cut look like an actual
+  // outfit swap rather than a stitched mash-up.
+  const [usePose, setUsePose] = useState(true)
   // Outfit-swap rotation cadence in seconds. 0 = greedy (planner picks the
   // single best source per bucket — typically collapses to one dominant
   // source). >0 forces a different source every N seconds, sacrificing
