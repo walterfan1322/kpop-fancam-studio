@@ -374,6 +374,56 @@ def _refine_cuts_by_pose(chunks: list["MergeChunk"],
     return out
 
 
+def _compute_edge_clamp_ratio(head_xy_norm: np.ndarray | None,
+                               head_conf: np.ndarray | None,
+                               source_w: int,
+                               source_h: int,
+                               output_aspect_wh: float = 9.0 / 16.0,
+                               conf_threshold: float = 0.30
+                               ) -> tuple[float, int]:
+    """Estimate the fraction of confident-tracked frames where the
+    head_x position would force the (landscape → 9:16) crop window
+    to clamp against the source frame's left or right edge.
+
+    When the dancer's head sits inside `[0, half_w] ∪ [1-half_w, 1]`
+    of the source frame's normalised x range, the 9:16 crop window —
+    which has half-width `half_w` around the centre point — cannot
+    centre on them without spilling past the frame edge. The cropper
+    then clamps the window to the edge, leaving the dancer visibly
+    off-centre in the output. A source whose target spends most of
+    the song in this band produces stage-wide / left-corner /
+    right-corner framing rather than a follow-shot fancam, even when
+    target ID is correct.
+
+    Returns (clamp_ratio, n_valid_frames). Returns (0.0, 0) when:
+      - no head trajectory is supplied (use_pose=False),
+      - source is already narrower than 9:16 (portrait passthrough —
+        no horizontal crop, so no clamp risk), or
+      - no frames meet the head confidence threshold.
+
+    The caller decides whether to demote the source. The
+    n_valid_frames return is informative — a 0.95 clamp ratio off
+    only 3 confident frames is a different story than 0.95 off 800
+    frames, and the demotion logic should weight accordingly.
+    """
+    if head_xy_norm is None or head_conf is None:
+        return 0.0, 0
+    if len(head_xy_norm) == 0 or source_w <= 0 or source_h <= 0:
+        return 0.0, 0
+    crop_w_frac = (float(source_h) * output_aspect_wh) / float(source_w)
+    if crop_w_frac >= 1.0:
+        # Source already ≤ 9:16 — no horizontal crop, no edge-clamp.
+        return 0.0, 0
+    half_w = crop_w_frac / 2.0
+    valid = head_conf > conf_threshold
+    n_valid = int(valid.sum())
+    if n_valid == 0:
+        return 0.0, 0
+    hx = head_xy_norm[valid, 0]
+    clamped = (hx < half_w) | (hx > (1.0 - half_w))
+    return float(clamped.sum()) / float(n_valid), n_valid
+
+
 def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                step_sec: float = 1.0,
                min_chunk_sec: float = 1.5,
@@ -389,6 +439,8 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
                rotation_max_sec: float = 0.0,
                rotation_seed: int = 0,
                rotation_min_coverage: float = 0.20,
+               max_edge_clamp_ratio: float = 0.30,
+               edge_clamp_min_valid_frames: int = 60,
                log_fn=print) -> list[MergeChunk]:
     """Decide, per song-second bucket, which source to use. Returns the
     resulting list of merge chunks covering [0, clip_dur] contiguously.
@@ -591,9 +643,44 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     # Tier-2 only — they can still satisfy the diversity invariant when no
     # high-coverage source is fresh, but the planner won't preferentially
     # pick them.
+    #
+    # Edge-clamp filter (parallel demotion): when use_pose is on, also check
+    # what fraction of confidently-tracked frames have the dancer in the
+    # source-frame's left/right edge band where the (source → 9:16) crop
+    # window would clamp against the frame edge. A source where the target
+    # is consistently at the edge of a wide-stage shot produces visibly
+    # off-centre output (the dancer ends up in the left-third or right-third
+    # of the 9:16 crop). Demote those sources to Tier-2 so the planner
+    # prefers fancams where the target naturally falls in the centre band.
+    # When `s.head` is None (use_pose off) the helper returns 0.0 and the
+    # filter is a no-op — backward-compat with non-pose merges.
+    edge_clamp_stats: list[tuple[float, int]] = []
+    for s in sources:
+        if s.head is None:
+            edge_clamp_stats.append((0.0, 0))
+            continue
+        ratio, nv = _compute_edge_clamp_ratio(
+            getattr(s.head, "head_xy_norm", None),
+            getattr(s.head, "head_conf", None),
+            int(s.tracked.meta.width),
+            int(s.tracked.meta.height),
+        )
+        edge_clamp_stats.append((ratio, nv))
+
+    def _is_edge_clamp_demoted(i: int) -> bool:
+        ratio, nv = edge_clamp_stats[i]
+        # Require a minimum confident-frame sample to trust the ratio.
+        # A 90% clamp ratio off 8 frames is noise; off 600 frames is
+        # signal. Sources below the sample floor are NOT demoted on
+        # this criterion (still subject to coverage demotion).
+        if nv < edge_clamp_min_valid_frames:
+            return False
+        return ratio > max_edge_clamp_ratio
+
     rotation_preferred_idx = [
         i for i in ungated_idx
         if float(coverage_masks[i].mean()) >= rotation_min_coverage
+        and not _is_edge_clamp_demoted(i)
     ]
     rotation_demoted_idx = [
         i for i in ungated_idx if i not in rotation_preferred_idx
@@ -601,12 +688,20 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
     use_rotation = rotation_sec > 0.0 and len(ungated_idx) >= 2
     if use_rotation:
         if rotation_demoted_idx:
-            log_fn("[merge] rotation min-coverage filter "
-                   f"(threshold={rotation_min_coverage:.2f}): demoting "
-                   + ", ".join(
-                       f"{sources[i].meta.video_id}"
-                       f"(cov={float(coverage_masks[i].mean()):.2f})"
-                       for i in rotation_demoted_idx))
+            def _why(i: int) -> str:
+                cov = float(coverage_masks[i].mean())
+                ratio, nv = edge_clamp_stats[i]
+                reasons: list[str] = []
+                if cov < rotation_min_coverage:
+                    reasons.append(f"cov={cov:.2f}")
+                if (nv >= edge_clamp_min_valid_frames
+                        and ratio > max_edge_clamp_ratio):
+                    reasons.append(f"edge_clamp={ratio:.2f}@n={nv}")
+                return f"{sources[i].meta.video_id}(" + ",".join(reasons) + ")"
+            log_fn("[merge] rotation Tier-1 filter "
+                   f"(min_cov={rotation_min_coverage:.2f}, "
+                   f"max_edge_clamp={max_edge_clamp_ratio:.2f}): demoting "
+                   + ", ".join(_why(i) for i in rotation_demoted_idx))
         # Build slot boundaries. Two modes:
         #   • Fixed: rotation_max_sec <= rotation_sec → every slot is
         #     rotation_sec long. Predictable but mechanical.

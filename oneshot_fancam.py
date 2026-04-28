@@ -351,6 +351,19 @@ def main():
                          "target's face is rarely confirmed against the "
                          "gallery (those chunks tend to lock onto a peer "
                          "member). Default 0.20.")
+    ap.add_argument("--max-edge-clamp-ratio", type=float, default=0.30,
+                    help="upper bound on the fraction of confident-tracked "
+                         "frames whose head_x falls in the source-frame's "
+                         "edge band (where the source→9:16 crop window "
+                         "must clamp against the frame edge). Sources "
+                         "exceeding this ratio are demoted to rotation "
+                         "Tier-2: they still fill diversity slots, but "
+                         "the planner won't preferentially pick them. "
+                         "Mitigates wide-stage fancams where the target "
+                         "lives in the left/right third of the source — "
+                         "even with correct ID, the crop ends up off-"
+                         "centre. Only meaningful with --pose; no-op "
+                         "without head trajectories. Default 0.30.")
     args = ap.parse_args()
     corners = None
     if args.delogo_corners:
@@ -813,6 +826,7 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                                        rotation_max_sec=rot_max,
                                        rotation_seed=rot_seed,
                                        rotation_min_coverage=float(args.rotation_min_coverage),
+                                       max_edge_clamp_ratio=float(args.max_edge_clamp_ratio),
                                        log_fn=log)
     # Output path: hash of sorted video ids for stable naming.
     sorted_ids = sorted(s.meta.video_id for s in merge_sources_list)
