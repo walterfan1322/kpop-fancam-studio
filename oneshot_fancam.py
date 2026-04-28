@@ -135,11 +135,22 @@ def filter_candidates(entries: list[dict], min_dur: float, max_dur: float,
                       min_views: int, title_any: list[str],
                       song: str = "",
                       member_lat: str = "", member_han: str = "",
-                      force_landscape: bool = False) -> list[dict]:
+                      force_landscape: bool = False,
+                      merge_mode: bool = False) -> list[dict]:
     """force_landscape drops solo-fancam-style titles (MPD직캠 and similar are
     portrait in 2024+), keeping only team-stage / performance titles which are
     reliably 16:9. Orientation can't be filtered from yt-dlp flat metadata
-    (extract_flat doesn't return width/height), so we key off title cues."""
+    (extract_flat doesn't return width/height), so we key off title cues.
+
+    `merge_mode` overrides part of that filter: in merge mode the output is
+    9:16 portrait anyway, and a 1080×1920 vertical 직캠 is actually IDEAL —
+    the dancer fills the full frame, gallery dominance is high (target is
+    the only person on screen most of the time), and it's almost never the
+    multi-cam broadcast edit that the shot-gate rejects. So when merging,
+    we keep solo-fancam titles in the pool and rank them ABOVE group-stage
+    sources because their Yujin coverage will be ~1.0 vs. ~0.15-0.4 for a
+    wide one-take. solo_other (someone else's direct cam) stays excluded —
+    we can't track Yujin in a Wonyoung-focus 직캠."""
     title_any_lc = [t.lower() for t in title_any if t.strip()]
     song_lc = song.lower().strip()
     out: list[dict] = []
@@ -155,14 +166,21 @@ def filter_candidates(entries: list[dict], min_dur: float, max_dur: float,
             continue
         e["_source_type"] = _classify_source(title, member_lat, member_han)
         if force_landscape and e["_source_type"] in ("solo_fancam", "solo_other"):
-            # Direct-cam titles are almost always portrait — skip entirely
-            # when the user asked for landscape.
-            continue
+            # solo_other (different member's direct cam) is always useless
+            # for our target. solo_fancam (our member's direct cam) is kept
+            # in merge mode because it cuts to a 9:16 portrait output and
+            # high-dominance vertical sources are the best material for
+            # outfit-swap rotation; it's only dropped in non-merge mode
+            # where the legacy single-clip path expects landscape.
+            if not (merge_mode and e["_source_type"] == "solo_fancam"):
+                continue
         out.append(e)
-    # Rank: song in title > source type > view count. In force_landscape mode
-    # only group_stage remains, so the priority dict only matters for the
-    # default path.
-    if force_landscape:
+    # Rank: song in title > source type > view count. In merge mode we put
+    # solo_fancam first because high-dominance Yujin sources avoid both
+    # tracker drift and the rotation_min_coverage demotion downstream.
+    if merge_mode:
+        prio = {"solo_fancam": 0, "group_stage": 1, "solo_other": 2}
+    elif force_landscape:
         prio = {"group_stage": 0}
     else:
         prio = {"solo_fancam": 0, "group_stage": 1, "solo_other": 2}
@@ -358,8 +376,12 @@ def main():
     # the gap — they're landscape 16:9 so track-crop auto-engages and
     # person_track uses the face library to follow `member_lat` into 9:16.
     if args.force_landscape:
-        # Skew heavily toward music-show / performance terms, and drop any
-        # queries that would surface MPD직캠-style portrait cams.
+        # Skew heavily toward music-show / performance terms. In single-clip
+        # mode we drop portrait-cam queries (legacy path expects landscape).
+        # In merge mode we ALSO add solo-fancam queries because high-dominance
+        # vertical sources are the best material for outfit-swap rotation —
+        # they cut to a 9:16 portrait output anyway and their Yujin coverage
+        # is ~1.0 vs. ~0.15-0.4 for a wide one-take.
         queries = [
             f"{artist} {args.song} stage",
             f"{artist} {args.song} performance",
@@ -370,6 +392,16 @@ def main():
             f"{artist} {args.song} dance practice",
             f"{artist} {args.song} live",
         ]
+        if int(args.merge_sources) >= 2:
+            queries.extend([
+                f"{artist} {args.member_lat} {args.song} fancam",
+                f"{artist} {args.song} {args.member_lat} fancam",
+                f"{artist} {args.member_lat} fancam",
+            ])
+            if args.member_han.strip():
+                han = args.member_han.strip()
+                queries.append(f"{artist} {han} {args.song} 직캠")
+                queries.append(f"{artist} {han} 직캠")
         if args.member_han.strip():
             queries.insert(1, f"{artist} {args.song} 무대")
     else:
@@ -397,22 +429,31 @@ def main():
     # Accept either a fancam-style title OR a team-stage title. Audio
     # margin-guard downstream still enforces the chosen song. In
     # force_landscape mode we tighten the keyword gate to stage-only terms
-    # so the title_any pre-filter doesn't let portrait titles through.
+    # so the title_any pre-filter doesn't let portrait titles through —
+    # except in merge mode, where solo-fancam titles ARE wanted (kept above
+    # by filter_candidates(merge_mode=True)).
     if args.force_landscape:
         title_any = [
             "stage", "무대", "performance", "dance practice", "댄스 연습",
             "music bank", "inkigayo", "countdown", "show champion", "live",
         ]
+        if int(args.merge_sources) >= 2:
+            title_any.extend([
+                "fancam", "직캠", "focus", "facecam", "얼빡",
+                args.member_lat, args.member_han,
+            ])
     else:
         title_any = [
             "fancam", "직캠", "focus", args.member_lat, args.member_han,
             "stage", "무대", "performance", "dance practice", "댄스 연습",
         ]
+    merge_n = max(1, int(args.merge_sources))
     filt = filter_candidates(entries, args.min_dur, args.max_dur,
                              args.min_views, title_any, song=args.song,
                              member_lat=args.member_lat,
                              member_han=args.member_han,
-                             force_landscape=args.force_landscape)
+                             force_landscape=args.force_landscape,
+                             merge_mode=(merge_n >= 2))
     log(f"[filter] {len(filt)} pass metadata filter")
     if used_vids:
         before = len(filt)
@@ -425,7 +466,12 @@ def main():
     # wrong-song candidate over a right-song one.
     have = downloaded_ids()
     song_lc = args.song.lower().strip()
-    if args.force_landscape:
+    if merge_n >= 2:
+        # Merge mode: prefer high-dominance solo_fancam over wide group_stage.
+        # Avoids both the tracker-drift seen on low-cov group sources and the
+        # rotation_min_coverage demotion in plan_merge.
+        prio = {"solo_fancam": 0, "group_stage": 1, "solo_other": 2}
+    elif args.force_landscape:
         prio = {"group_stage": 0}
     else:
         prio = {"solo_fancam": 0, "group_stage": 1, "solo_other": 2}
@@ -440,7 +486,6 @@ def main():
     pool = pool[:max_attempts]
     log(f"[pick] pool={len(pool)} (cap={max_attempts}); target={args.count} success(es)")
 
-    merge_n = max(1, int(args.merge_sources))
     if merge_n >= 2:
         summary = _run_merge_mode(args, artist, pool, have, corners, merge_n, t0)
         print("ONESHOT " + json.dumps(summary, ensure_ascii=False))

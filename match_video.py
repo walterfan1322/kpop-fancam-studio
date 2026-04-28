@@ -1027,12 +1027,12 @@ def match_and_track(group: str, video: Path, threshold: float, margin: float,
     to `merge_sources.MergeSource`.
 
     Differs from `run(extract=True)` in two ways: never extracts a clip,
-    and returns the tracked segment dataclass. Merge always requires a
-    landscape source + member name (tracking is mandatory for 9:16 crops);
-    non-landscape or unnamed sources are returned with skip_reason
-    'not_landscape' / 'no_member' so the caller can decide how to proceed
-    (the merge pipeline should skip them; a fallback to single-source
-    extract is the caller's responsibility).
+    and returns the tracked segment dataclass. Merge accepts both
+    landscape sources (full track-crop + 9:16 reframe) AND portrait sources
+    (solo-fancam direct cams; already 9:16 so we passthrough — tracking
+    still runs to verify the target member). Square / unparseable aspect
+    is returned with skip_reason 'not_landscape'; missing member with
+    'no_member'.
     """
     out, best, reason, _ = _match_audio(group, video, threshold, margin,
                                          only_title)
@@ -1046,10 +1046,14 @@ def match_and_track(group: str, video: Path, threshold: float, margin: float,
     clip_dur = min(CLIP_MAX_SEC, best.ref_duration_sec)
     size = _probe_size(video)
     is_landscape = bool(size and size[0] > size[1] * 1.2)
-    if not is_landscape:
+    is_portrait = bool(size and size[1] > size[0] * 1.2)
+    if not (is_landscape or is_portrait):
         out["skip_reason"] = "not_landscape"
-        log(f"[merge:skip] {video.name}: not landscape (size={size})")
+        log(f"[merge:skip] {video.name}: aspect not 16:9 or 9:16 (size={size})")
         return out, None
+    if is_portrait:
+        log(f"[merge:portrait] {video.name}: native 9:16 source "
+            f"(size={size}) — track-crop will passthrough")
     if not member_lat:
         out["skip_reason"] = "no_member"
         log(f"[merge:skip] {video.name}: no member_lat provided")
