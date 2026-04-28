@@ -53,6 +53,15 @@ class MergeSource:
     # merge_clip when called with use_pose=True. Absent / None when
     # pose mode is off; consumer must handle both paths.
     head: "Optional[object]" = None  # pose_track.HeadTrack
+    # Shot-aware coverage gating (M2b). When set, restricts the merge
+    # planner to picking buckets that fall inside one of the listed
+    # source-time intervals (seconds, in the source video's own
+    # timeline — NOT song time). Used to admit a partly-multicam
+    # source by masking out its short-shot bursts and only using its
+    # long-take regions. None = no masking (whole source available),
+    # which is the legacy behaviour for sources that didn't go
+    # through the shot gate or that were classified as single-cam.
+    valid_intervals: "Optional[list[tuple[float, float]]]" = None
 
 
 @dataclass
@@ -374,6 +383,41 @@ def _refine_cuts_by_pose(chunks: list["MergeChunk"],
     return out
 
 
+def _intervals_to_bucket_mask(intervals: "list[tuple[float, float]] | None",
+                                offset_sec: float,
+                                n_buckets: int,
+                                step_sec: float) -> np.ndarray:
+    """Project source-time intervals onto song-time buckets.
+
+    Returns a (n_buckets,) boolean array. Bucket `b` covers song-time
+    `[b * step_sec, (b+1) * step_sec)`, which maps to source-time
+    `[offset_sec + b * step_sec, offset_sec + (b+1) * step_sec)`.
+    A bucket is True iff that whole window is contained in some
+    interval (strict containment — half-overlapping buckets land at
+    a within-source cut, exactly the thing we want to avoid).
+
+    `intervals=None` (no shot data) returns all-True so the mask is
+    a no-op for sources that didn't go through the shot gate.
+    Empty intervals list returns all-False so a source with explicit
+    "no usable region" never gets picked.
+    """
+    if intervals is None:
+        return np.ones(n_buckets, dtype=bool)
+    mask = np.zeros(n_buckets, dtype=bool)
+    for src_start, src_end in intervals:
+        # Convert to song-time bucket range. ceil for the start so we
+        # don't admit a bucket whose left edge sits inside the cut;
+        # floor for the end (exclusive) so the bucket's right edge
+        # also fits.
+        b0 = int(np.ceil((src_start - offset_sec) / step_sec))
+        b1 = int(np.floor((src_end - offset_sec) / step_sec))
+        b0 = max(0, b0)
+        b1 = min(n_buckets, b1)
+        if b1 > b0:
+            mask[b0:b1] = True
+    return mask
+
+
 def _compute_edge_clamp_ratio(head_xy_norm: np.ndarray | None,
                                head_conf: np.ndarray | None,
                                source_w: int,
@@ -551,6 +595,26 @@ def plan_merge(sources: Sequence[MergeSource], clip_dur: float,
             # pick this bucket from this source.
             cm = raw_cm
             qm = qm * cm.astype(np.float32)
+
+        # Shot-aware coverage gating. When the source carries
+        # `valid_intervals`, AND those into both masks so the planner
+        # can never select a bucket that straddles a within-source
+        # cut. This admits previously-rejected partly-multicam sources
+        # by salvaging just their long-take regions — see oneshot's
+        # shot-gate-mask path. None = legacy (no masking).
+        if s.valid_intervals is not None:
+            valid_mask = _intervals_to_bucket_mask(
+                s.valid_intervals, s.offset_sec, n_buckets, step_sec)
+            n_valid = int(valid_mask.sum())
+            n_pre = int(cm.sum())
+            cm = cm & valid_mask
+            qm = qm * valid_mask.astype(np.float32)
+            n_post = int(cm.sum())
+            log_fn(f"[merge] shot-mask: {s.meta.cluster_label} "
+                   f"({s.meta.video_id}) {len(s.valid_intervals)} long-shot "
+                   f"interval(s) → {n_valid}/{n_buckets} buckets valid; "
+                   f"target coverage {n_pre}→{n_post} buckets")
+
         coverage_masks.append(cm)
         quality_masks.append(qm)
 

@@ -302,11 +302,30 @@ def main():
                          "like merge cuts.")
     ap.add_argument("--shot-gate-threshold", type=float, default=0.10,
                     help="cuts-per-second threshold for the shot gate. "
-                         "Sources with this rate or higher are labeled "
-                         "multi-cam and rejected from the merge pool. "
-                         "Default 0.10 separates broadcast edits "
-                         "(~0.15-0.50) from jikcams / dance practice / "
-                         "one-take broadcast clips (~0.00-0.05).")
+                         "Legacy hard-reject knob, retained for "
+                         "compat: sources at or above this rate get "
+                         "logged as multi-cam, but with shot-aware "
+                         "masking enabled (default) the gate's actual "
+                         "decision is made on per-shot length, not "
+                         "average cps. Default 0.10.")
+    ap.add_argument("--shot-min-segment-sec", type=float, default=0.0,
+                    help="minimum length (seconds) of a single shot "
+                         "for it to be considered usable inside an "
+                         "otherwise-multicam source. Buckets that "
+                         "fall outside any qualifying shot are masked "
+                         "off so the planner can't pick a chunk that "
+                         "straddles a within-source cut. 0 (default) "
+                         "auto-derives from --rotation max+1s with "
+                         "floor 5s — guarantees a rotation slot fits "
+                         "inside a single shot.")
+    ap.add_argument("--shot-min-usable-sec", type=float, default=15.0,
+                    help="minimum total long-shot duration (seconds) "
+                         "for a source to be admitted to the merge "
+                         "pool. Sources whose qualifying shots sum "
+                         "below this floor are still rejected — even "
+                         "with masking, there's not enough single-cam "
+                         "footage left to be useful. Default 15.0s. "
+                         "Set to 0 to admit everything (debugging).")
     ap.add_argument("--merge-style", choices=["xfade", "hard_cut"],
                     default="xfade",
                     help="how to join merged chunks. 'xfade' (default) does "
@@ -610,13 +629,17 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
         stem = mp4.stem
         log(f"[oneshot:merge] ({i}/{len(pool)}) {stem} "
             f"({len(merge_sources_list)}/{merge_n} usable sources so far)")
-        # Shot gate (M2a): reject multi-cam broadcast edits before spending
-        # ~30-60s on person tracking. A 43-cut Performance Video merged
-        # hard-cut against a 1-cut jikcam looks like "editor flipped cams",
-        # not "dancer changed outfits", so we refuse to include it in the
-        # merge pool. Skip the gate entirely when NOT merging (legacy
-        # one-clip-per-source behaviour is fine with broadcast edits —
-        # their own cuts just become part of the clip).
+        # Shot gate (M2b — shot-aware masking): instead of rejecting any
+        # source whose AVERAGE cps trips the multicam threshold, run
+        # TransNetV2 to find each shot's [start, end], then admit the
+        # source carrying its long-take intervals as `valid_intervals`.
+        # plan_merge will mask out short-shot bursts so chunks can never
+        # straddle a within-source cut. Sources whose long-takes don't
+        # sum to enough usable footage (default 15s floor) still get
+        # rejected — there's nothing to salvage. Pre-tracking gate so
+        # we don't waste 30-60s of person-track work on a source we'll
+        # discard.
+        valid_intervals: "list[tuple[float, float]] | None" = None
         if merge_n >= 2 and not args.no_shot_gate:
             try:
                 shot_info = shot_gate.probe_shots(
@@ -624,13 +647,36 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                     cuts_per_sec_threshold=args.shot_gate_threshold,
                     log_fn=log,
                 )
-                if shot_info.is_multicam:
+                # Auto-derive the per-shot length floor from rotation
+                # cadence so any rotation slot fits inside a single
+                # shot. Floor 5s for non-rotation / greedy mode.
+                min_seg = args.shot_min_segment_sec
+                if min_seg <= 0.0:
+                    rot_str = (args.rotation or "0").strip()
+                    try:
+                        if "-" in rot_str:
+                            _a, _b = rot_str.split("-", 1)
+                            rot_cap = max(float(_a), float(_b))
+                        else:
+                            rot_cap = float(rot_str)
+                    except ValueError:
+                        rot_cap = 0.0
+                    min_seg = max(5.0, rot_cap + 1.0)
+                long_shots = shot_info.long_shots(min_dur=min_seg)
+                long_total = sum(e - s for s, e in long_shots)
+                # Source has insufficient single-cam footage even after
+                # masking — reject as before, but with a richer
+                # skip_reason that tells the operator WHY (avg cps was
+                # the old proxy; long-take floor is the new truth).
+                if long_total < float(args.shot_min_usable_sec):
                     log(f"[oneshot:merge] ({i}/{len(pool)}) {stem}: "
                         f"rejected by shot gate "
                         f"({shot_info.num_shots} shots, "
-                        f"{shot_info.cuts_per_sec:.3f} cuts/sec "
-                        f">= {args.shot_gate_threshold:.3f}) — multi-cam "
-                        f"broadcast edit, unsuitable for outfit-swap merge")
+                        f"{shot_info.cuts_per_sec:.3f} cps, "
+                        f"longest-shot total {long_total:.1f}s "
+                        f"< floor {args.shot_min_usable_sec:.1f}s "
+                        f"@ min_seg={min_seg:.1f}s) — not enough "
+                        f"single-cam footage to merge")
                     clips.append({
                         "video_id": vid,
                         "video_stem": stem,
@@ -638,12 +684,28 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
                         "view_count": e.get("view_count"),
                         "source_type": e.get("_source_type"),
                         "matched": False,
-                        "skip_reason": (f"multicam_{shot_info.num_shots}shots_"
-                                        f"{shot_info.cuts_per_sec:.2f}cps"),
+                        "skip_reason": (
+                            f"multicam_{shot_info.num_shots}shots_"
+                            f"{shot_info.cuts_per_sec:.2f}cps_"
+                            f"longshots{long_total:.0f}s"),
                         "score": None,
                         "crop_mode": None,
                     })
                     continue
+                # Source has enough usable footage. If it's pure
+                # single-cam (whole video is one long shot), valid_
+                # intervals covers everything and the mask is a no-op
+                # in plan_merge. If it's partly multicam, the mask
+                # carves out the chorus-burst etc.
+                valid_intervals = long_shots
+                masked_pct = (
+                    100.0 * (1.0 - long_total / max(shot_info.duration_sec,
+                                                     1e-9)))
+                log(f"[oneshot:merge] ({i}/{len(pool)}) {stem}: shot-mask "
+                    f"{shot_info.num_shots} shots → {len(long_shots)} "
+                    f"long-takes (>={min_seg:.1f}s) "
+                    f"covering {long_total:.1f}/{shot_info.duration_sec:.1f}s "
+                    f"({100.0 - masked_pct:.0f}% kept, {masked_pct:.0f}% masked)")
             except Exception as ex:
                 # Gate failure is non-fatal — log and continue. Better to
                 # try tracking than to silently drop a maybe-good source.
@@ -713,6 +775,7 @@ def _run_merge_mode(args, artist: str, pool: list[dict], have: set[str],
             offset_sec=float(out["matched_offset_sec"]),
             tracked=ts,
             matched_title=out["matched_title"],
+            valid_intervals=valid_intervals,
         ))
         # Expose target-member visibility per source so it's obvious when a
         # merge pool has no source that actually features the target — e.g.
