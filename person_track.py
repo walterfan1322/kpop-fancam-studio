@@ -452,7 +452,7 @@ def identify_target_tracks(video: Path, start_sec: float, fps: float,
                            penalty_weight: float = 0.8,
                            gallery_gate: bool = True,
                            gallery_margin: float = 0.0,
-                           peer_dominance_margin: float = 0.05,
+                           peer_dominance_margin: float = 0.10,
                            peer_names: Optional[list[str]] = None,
                            peer_counts: Optional[list[int]] = None,
                            ) -> list[tuple[int, float, float]]:
